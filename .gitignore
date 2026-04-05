@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.env
+.env.local
+uploads/events/*
+!uploads/events/.gitkeep
+.env.example
+
+# Never commit these project docs/templates
+specs/
+CLAUDE.md
+README.md
