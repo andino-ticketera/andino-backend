@@ -1,4 +1,3 @@
-import QRCode from "qrcode";
 import { query } from "../db/pool.js";
 import { AppError } from "../utils/errors.js";
 import type {
@@ -11,6 +10,7 @@ import type {
   MedioPago,
 } from "../types/index.js";
 import { getPublicUserById, getPublicUsersByIds } from "./auth.service.js";
+import { buildTicketAssets } from "./ticket-assets.service.js";
 
 interface CompraListRow {
   id: string;
@@ -255,14 +255,9 @@ export async function getEntradaDetalleByUser(
     throw buildEntradaNoDisponibleError(row.compra_estado);
   }
 
-  const [buyer, organizer, qrImageDataUrl] = await Promise.all([
+  const [buyer, organizer] = await Promise.all([
     getPublicUserById(row.compra_user_id),
     getPublicUserById(row.creador_id),
-    QRCode.toDataURL(row.id, {
-      errorCorrectionLevel: "M",
-      margin: 1,
-      width: 512,
-    }),
   ]);
 
   if (!buyer) {
@@ -273,13 +268,27 @@ export async function getEntradaDetalleByUser(
     );
   }
 
+  const organizerName = organizer?.nombreCompleto || "Organizador";
+  const ticketAssets = await buildTicketAssets({
+    entradaId: row.id,
+    eventoTitulo: row.evento_titulo,
+    fechaEvento: row.fecha_evento.toISOString(),
+    locacion: row.locacion,
+    direccion: row.direccion,
+    organizador: organizerName,
+    compradorNombre: buyer.nombreCompleto,
+    qrData: row.id,
+  });
+
   return {
     entrada_id: row.id,
     compra_id: row.compra_id,
     numero_entrada: row.numero_entrada,
     qr_token: row.qr_token,
     qr_data: row.id,
-    qr_image_data_url: qrImageDataUrl,
+    qr_image_data_url: ticketAssets.qrImageDataUrl,
+    qr_image_url: ticketAssets.qrImageUrl,
+    qr_pdf_url: ticketAssets.qrPdfUrl,
     estado: row.estado,
     fecha_uso: toIsoString(row.usada_at),
     evento: {
@@ -288,7 +297,7 @@ export async function getEntradaDetalleByUser(
       fecha_evento: row.fecha_evento.toISOString(),
       locacion: row.locacion,
       direccion: row.direccion,
-      organizador: organizer?.nombreCompleto || "Organizador",
+      organizador: organizerName,
     },
     comprador: {
       id: buyer.id,

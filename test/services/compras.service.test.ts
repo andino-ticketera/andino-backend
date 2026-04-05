@@ -6,7 +6,7 @@ const mocks = vi.hoisted(() => {
     queryMock: vi.fn(),
     getPublicUserByIdMock: vi.fn(),
     getPublicUsersByIdsMock: vi.fn(),
-    toDataUrlMock: vi.fn(),
+    buildTicketAssetsMock: vi.fn(),
   };
 });
 
@@ -19,10 +19,8 @@ vi.mock("../../src/services/auth.service.js", () => ({
   getPublicUsersByIds: mocks.getPublicUsersByIdsMock,
 }));
 
-vi.mock("qrcode", () => ({
-  default: {
-    toDataURL: mocks.toDataUrlMock,
-  },
+vi.mock("../../src/services/ticket-assets.service.js", () => ({
+  buildTicketAssets: mocks.buildTicketAssetsMock,
 }));
 
 import {
@@ -34,6 +32,9 @@ import {
 describe("compras.service", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.buildTicketAssetsMock.mockResolvedValue({
+      qrImageDataUrl: "data:image/png;base64,qr-demo",
+    });
   });
 
   it("lista compras del usuario con nombre de organizador resuelto", async () => {
@@ -225,7 +226,11 @@ describe("compras.service", () => {
         rol: "ORGANIZADOR",
       });
 
-    mocks.toDataUrlMock.mockResolvedValueOnce("data:image/png;base64,qr-demo");
+    mocks.buildTicketAssetsMock.mockResolvedValueOnce({
+      qrImageDataUrl: "data:image/png;base64,qr-demo",
+      qrImageUrl: "https://res.cloudinary.com/demo/image/upload/entrada-1-qr.png",
+      qrPdfUrl: "https://res.cloudinary.com/demo/raw/upload/entrada-1-ticket.pdf",
+    });
 
     const result = await getEntradaDetalleByUser("user-1", "entrada-1");
 
@@ -233,6 +238,10 @@ describe("compras.service", () => {
       entrada_id: "entrada-1",
       qr_data: "entrada-1",
       qr_image_data_url: "data:image/png;base64,qr-demo",
+      qr_image_url:
+        "https://res.cloudinary.com/demo/image/upload/entrada-1-qr.png",
+      qr_pdf_url:
+        "https://res.cloudinary.com/demo/raw/upload/entrada-1-ticket.pdf",
       comprador: {
         nombre_completo: "Comprador Demo",
       },
@@ -240,6 +249,17 @@ describe("compras.service", () => {
         organizador: "Organizador Demo",
         fecha_evento: fechaEvento.toISOString(),
       },
+    });
+
+    expect(mocks.buildTicketAssetsMock).toHaveBeenCalledWith({
+      entradaId: "entrada-1",
+      eventoTitulo: "Festival Andino",
+      fechaEvento: fechaEvento.toISOString(),
+      locacion: "Teatro",
+      direccion: "Calle 123",
+      organizador: "Organizador Demo",
+      compradorNombre: "Comprador Demo",
+      qrData: "entrada-1",
     });
   });
 });

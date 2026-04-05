@@ -2,8 +2,6 @@ import { Router } from "express";
 import rateLimit from "express-rate-limit";
 import multer from "multer";
 import path from "node:path";
-import fs from "node:fs";
-import crypto from "node:crypto";
 import { requireAuth, requireRole } from "../middlewares/auth.js";
 import {
   parseMediosPago,
@@ -14,9 +12,11 @@ import { buildValidationError, AppError } from "../utils/errors.js";
 import * as eventosService from "../services/eventos.service.js";
 import * as categoriasService from "../services/categorias.service.js";
 import * as mercadoPagoService from "../services/mercadopago.service.js";
-import { env } from "../config/env.js";
 import type { Request, Response, NextFunction } from "express";
-import { logger } from "../lib/logger.js";
+import {
+  deleteManagedAsset,
+  storeEventAsset,
+} from "../services/media-storage.service.js";
 
 const router = Router();
 const ALLOWED_UPLOAD_EXTENSIONS = new Set([".jpg", ".jpeg", ".png", ".webp"]);
@@ -33,21 +33,8 @@ const mutationLimiter = rateLimit({
   },
 });
 
-// Multer config
-const UPLOADS_DIR = path.resolve("uploads/events");
-fs.mkdirSync(UPLOADS_DIR, { recursive: true });
-
-const storage = multer.diskStorage({
-  destination: (_req, _file, cb) => cb(null, UPLOADS_DIR),
-  filename: (_req, file, cb) => {
-    const ext = path.extname(file.originalname).toLowerCase();
-    const name = `${crypto.randomUUID()}${ext}`;
-    cb(null, name);
-  },
-});
-
 const upload = multer({
-  storage,
+  storage: multer.memoryStorage(),
   limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
   fileFilter: (_req, file, cb) => {
     const allowed = ["image/jpeg", "image/png", "image/webp"];
@@ -113,10 +100,6 @@ function handleUpload(req: Request, res: Response, next: NextFunction): void {
   });
 }
 
-function buildFileUrl(filename: string): string {
-  return `${env.publicAssetBaseUrl}/uploads/events/${filename}`;
-}
-
 function isValidUUID(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
     value,
@@ -126,19 +109,6 @@ function isValidUUID(value: string): boolean {
 function getRouteId(value: string | string[] | undefined): string {
   if (Array.isArray(value)) return value[0] || "";
   return value || "";
-}
-
-function deleteFile(filePath: string): void {
-  try {
-    if (fs.existsSync(filePath)) {
-      fs.unlinkSync(filePath);
-    }
-  } catch (err) {
-    logger.warn("No se pudo eliminar archivo del filesystem", {
-      filePath,
-      error: err instanceof Error ? err.message : String(err),
-    });
-  }
 }
 
 async function assertMercadoPagoEventEnabled(
@@ -165,16 +135,13 @@ router.post(
   requireRole(["ORGANIZADOR", "ADMIN"]),
   handleUpload,
   async (req: Request, res: Response, next: NextFunction) => {
-    let uploadedFiles: UploadedFiles | undefined;
+    let imagenUrl: string | null = null;
+    let flyerUrl: string | null = null;
     try {
-      uploadedFiles = req.files as UploadedFiles | undefined;
-      const files = uploadedFiles;
+      const files = req.files as UploadedFiles | undefined;
       const errors = validateCreateEvento(req.body, files || {});
 
       if (errors.length > 0) {
-        // Limpiar archivos subidos si hay errores
-        if (files?.imagen?.[0]) deleteFile(files.imagen[0].path);
-        if (files?.flyer?.[0]) deleteFile(files.flyer[0].path);
         next(buildValidationError(errors));
         return;
       }
@@ -183,8 +150,6 @@ router.post(
         String(req.body.categoria || "").trim(),
       );
       if (!categoriaValida) {
-        if (files?.imagen?.[0]) deleteFile(files.imagen[0].path);
-        if (files?.flyer?.[0]) deleteFile(files.flyer[0].path);
         next(
           buildValidationError([
             {
@@ -196,9 +161,9 @@ router.post(
         return;
       }
 
-      const imagenUrl = buildFileUrl(files!.imagen![0].filename);
-      const flyerUrl = files?.flyer?.[0]
-        ? buildFileUrl(files.flyer[0].filename)
+      imagenUrl = await storeEventAsset(files!.imagen![0], "imagen");
+      flyerUrl = files?.flyer?.[0]
+        ? await storeEventAsset(files.flyer[0], "flyer")
         : null;
 
       await assertMercadoPagoEventEnabled(
@@ -215,15 +180,18 @@ router.post(
       );
 
       if (result.idempotentReplay) {
-        // En replay de idempotencia, los archivos subidos en esta request no se usan.
-        if (files?.imagen?.[0]) deleteFile(files.imagen[0].path);
-        if (files?.flyer?.[0]) deleteFile(files.flyer[0].path);
+        await Promise.all([
+          deleteManagedAsset(imagenUrl),
+          deleteManagedAsset(flyerUrl),
+        ]);
       }
 
       res.status(result.idempotentReplay ? 409 : 201).json(result.evento);
     } catch (err) {
-      if (uploadedFiles?.imagen?.[0]) deleteFile(uploadedFiles.imagen[0].path);
-      if (uploadedFiles?.flyer?.[0]) deleteFile(uploadedFiles.flyer[0].path);
+      await Promise.all([
+        deleteManagedAsset(imagenUrl),
+        deleteManagedAsset(flyerUrl),
+      ]);
       next(err);
     }
   },
@@ -290,7 +258,8 @@ router.put(
   requireRole(["ORGANIZADOR", "ADMIN"]),
   handleUpload,
   async (req: Request, res: Response, next: NextFunction) => {
-    let uploadedFiles: UploadedFiles | undefined;
+    let imagenUrl: string | undefined;
+    let flyerUrl: string | undefined;
     try {
       const eventoId = getRouteId(req.params.id);
 
@@ -326,8 +295,7 @@ router.put(
         return;
       }
 
-      uploadedFiles = req.files as UploadedFiles | undefined;
-      const files = uploadedFiles;
+      const files = req.files as UploadedFiles | undefined;
       const errors = validateUpdateEvento(req.body, files || {}, {
         entradas_vendidas: currentEvento.entradas_vendidas,
         precio: parseFloat(currentEvento.precio),
@@ -335,8 +303,6 @@ router.put(
       });
 
       if (errors.length > 0) {
-        if (files?.imagen?.[0]) deleteFile(files.imagen[0].path);
-        if (files?.flyer?.[0]) deleteFile(files.flyer[0].path);
         next(buildValidationError(errors));
         return;
       }
@@ -346,8 +312,6 @@ router.put(
           String(req.body.categoria || "").trim(),
         );
         if (!categoriaValida) {
-          if (files?.imagen?.[0]) deleteFile(files.imagen[0].path);
-          if (files?.flyer?.[0]) deleteFile(files.flyer[0].path);
           next(
             buildValidationError([
               {
@@ -360,11 +324,11 @@ router.put(
         }
       }
 
-      const imagenUrl = files?.imagen?.[0]
-        ? buildFileUrl(files.imagen[0].filename)
+      imagenUrl = files?.imagen?.[0]
+        ? await storeEventAsset(files.imagen[0], "imagen")
         : undefined;
-      const flyerUrl = files?.flyer?.[0]
-        ? buildFileUrl(files.flyer[0].filename)
+      flyerUrl = files?.flyer?.[0]
+        ? await storeEventAsset(files.flyer[0], "flyer")
         : undefined;
 
       const effectiveMediosPago =
@@ -385,24 +349,21 @@ router.put(
         flyerUrl,
       );
 
-      // Si se subieron nuevos archivos, eliminar los anteriores para evitar huellas huerfanas.
-      if (files?.imagen?.[0] && currentEvento.imagen_url) {
-        const oldImagen = currentEvento.imagen_url.split("/").pop();
-        if (oldImagen) {
-          deleteFile(path.join(UPLOADS_DIR, oldImagen));
-        }
-      }
-      if (files?.flyer?.[0] && currentEvento.flyer_url) {
-        const oldFlyer = currentEvento.flyer_url.split("/").pop();
-        if (oldFlyer) {
-          deleteFile(path.join(UPLOADS_DIR, oldFlyer));
-        }
-      }
+      await Promise.all([
+        files?.imagen?.[0]
+          ? deleteManagedAsset(currentEvento.imagen_url)
+          : Promise.resolve(),
+        files?.flyer?.[0]
+          ? deleteManagedAsset(currentEvento.flyer_url)
+          : Promise.resolve(),
+      ]);
 
       res.json(evento);
     } catch (err) {
-      if (uploadedFiles?.imagen?.[0]) deleteFile(uploadedFiles.imagen[0].path);
-      if (uploadedFiles?.flyer?.[0]) deleteFile(uploadedFiles.flyer[0].path);
+      await Promise.all([
+        deleteManagedAsset(imagenUrl),
+        deleteManagedAsset(flyerUrl),
+      ]);
       next(err);
     }
   },
@@ -425,19 +386,10 @@ router.delete(
 
       const result = await eventosService.deleteEvento(eventoId);
 
-      // Si fue eliminacion fisica, borrar la imagen del filesystem
-      if (result.imagenUrl) {
-        const filename = result.imagenUrl.split("/").pop();
-        if (filename) {
-          deleteFile(path.join(UPLOADS_DIR, filename));
-        }
-      }
-      if (result.flyerUrl) {
-        const filename = result.flyerUrl.split("/").pop();
-        if (filename) {
-          deleteFile(path.join(UPLOADS_DIR, filename));
-        }
-      }
+      await Promise.all([
+        deleteManagedAsset(result.imagenUrl),
+        deleteManagedAsset(result.flyerUrl),
+      ]);
 
       res.json({ mensaje: result.mensaje });
     } catch (err) {

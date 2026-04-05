@@ -417,7 +417,11 @@ export async function deleteEvento(
   } else {
     // Eliminacion logica
     await query(`UPDATE eventos SET estado = 'CANCELADO' WHERE id = $1`, [id]);
-    return { mensaje: "Evento eliminado correctamente" };
+    return {
+      mensaje: "Evento eliminado correctamente",
+      imagenUrl: evento.imagen_url,
+      flyerUrl: evento.flyer_url || undefined,
+    };
   }
 }
 

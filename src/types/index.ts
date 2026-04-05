@@ -172,6 +172,8 @@ export interface EntradaDetalle {
   qr_token: string;
   qr_data: string;
   qr_image_data_url: string;
+  qr_image_url?: string;
+  qr_pdf_url?: string;
   estado: EstadoEntrada;
   fecha_uso?: string;
   evento: {
