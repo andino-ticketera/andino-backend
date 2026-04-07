@@ -96,7 +96,9 @@ function validateContactMessage(
 ): ValidatedContactMessage {
   const nombre = normalizeFullName(input.nombre);
   const email = normalizeEmail(input.email);
-  const asunto = String(input.asunto || "").trim().replace(/\s+/g, " ");
+  const asunto = String(input.asunto || "")
+    .trim()
+    .replace(/\s+/g, " ");
   const mensaje = String(input.mensaje || "").trim();
 
   if (!nombre || nombre.length < 3) {
@@ -282,17 +284,19 @@ export async function sendPurchaseConfirmationEmail(
   compraId: string,
 ): Promise<void> {
   if (!resendClient) {
-    logger.warn("Email de compra omitido por falta de configuracion de Resend", {
-      compraId,
-    });
+    logger.warn(
+      "Email de compra omitido por falta de configuracion de Resend",
+      {
+        compraId,
+      },
+    );
     return;
   }
 
   const resend = resendClient;
 
-  const { compra, entradas, organizador } = await loadPurchaseEmailPayload(
-    compraId,
-  );
+  const { compra, entradas, organizador } =
+    await loadPurchaseEmailPayload(compraId);
   const buyerEmail = compra.comprador_email;
 
   if (!buyerEmail) {
@@ -302,10 +306,11 @@ export async function sendPurchaseConfirmationEmail(
     return;
   }
 
-  const compradorNombre = [compra.comprador_nombre, compra.comprador_apellido]
-    .filter(Boolean)
-    .join(" ")
-    .trim() || "Comprador";
+  const compradorNombre =
+    [compra.comprador_nombre, compra.comprador_apellido]
+      .filter(Boolean)
+      .join(" ")
+      .trim() || "Comprador";
 
   const baseFrontendUrl = env.frontendUrl.replace(/\/$/, "");
   const compraUrl = compra.user_id
