@@ -8,6 +8,7 @@ import type {
   EstadoCompra,
   EstadoEntrada,
   MedioPago,
+  PerfilComprador,
 } from "../types/index.js";
 import { getPublicUserById, getPublicUsersByIds } from "./auth.service.js";
 import { buildTicketAssets } from "./ticket-assets.service.js";
@@ -46,6 +47,14 @@ interface EntradaDetalleRow extends EntradaRow {
   locacion: string;
   direccion: string;
   creador_id: string;
+}
+
+interface PerfilCompradorRow {
+  comprador_nombre: string | null;
+  comprador_apellido: string | null;
+  comprador_email: string | null;
+  comprador_documento: string | null;
+  comprador_tipo_documento: string | null;
 }
 
 function toNumber(value: string): number {
@@ -199,6 +208,39 @@ export async function getCompraDetalleByUser(
       organizerNames.get(compraRow.creador_id) || "Organizador",
     ),
     entradas: entradasResult.rows.map(buildEntradaResumen),
+  };
+}
+
+export async function getPerfilCompradorByUser(
+  userId: string,
+): Promise<PerfilComprador | null> {
+  const result = await query<PerfilCompradorRow>(
+    `SELECT
+      comprador_nombre,
+      comprador_apellido,
+      comprador_email,
+      comprador_documento,
+      comprador_tipo_documento
+    FROM compras
+    WHERE user_id = $1
+      AND comprador_email IS NOT NULL
+      AND comprador_documento IS NOT NULL
+    ORDER BY created_at DESC
+    LIMIT 1`,
+    [userId],
+  );
+
+  const row = result.rows[0];
+  if (!row) {
+    return null;
+  }
+
+  return {
+    nombre: row.comprador_nombre?.trim() || "",
+    apellido: row.comprador_apellido?.trim() || "",
+    email: row.comprador_email?.trim() || "",
+    documento: row.comprador_documento?.trim() || "",
+    tipoDocumento: row.comprador_tipo_documento?.trim() || "DNI",
   };
 }
 

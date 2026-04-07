@@ -165,6 +165,14 @@ export interface CompraDetalle extends CompraResumen {
   entradas: EntradaResumen[];
 }
 
+export interface PerfilComprador {
+  nombre: string;
+  apellido: string;
+  email: string;
+  documento: string;
+  tipoDocumento: string;
+}
+
 export interface EntradaDetalle {
   entrada_id: string;
   compra_id: string;

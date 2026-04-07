@@ -38,6 +38,20 @@ router.get(
 );
 
 router.get(
+  "/mias/perfil-comprador",
+  requireAuth,
+  requireRole(["USUARIO", "ORGANIZADOR", "ADMIN"]),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const data = await comprasService.getPerfilCompradorByUser(req.user!.id);
+      res.json({ data });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+router.get(
   "/mias/:id",
   requireAuth,
   requireRole(["USUARIO", "ORGANIZADOR", "ADMIN"]),
