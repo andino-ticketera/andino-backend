@@ -11,6 +11,7 @@ import categoriasRoutes from "./routes/categorias.routes.js";
 import authRoutes from "./routes/auth.routes.js";
 import carruselRoutes from "./routes/carrusel.routes.js";
 import comprasRoutes from "./routes/compras.routes.js";
+import contactoRoutes from "./routes/contacto.routes.js";
 import entradasRoutes from "./routes/entradas.routes.js";
 import organizadorMercadoPagoRoutes from "./routes/organizador-mercadopago.routes.js";
 import pagosRoutes from "./routes/pagos.routes.js";
@@ -79,6 +80,7 @@ app.use(`${env.apiBasePath}/categorias`, categoriasRoutes);
 app.use(`${env.apiBasePath}/auth`, authRoutes);
 app.use(`${env.apiBasePath}/carrusel`, carruselRoutes);
 app.use(`${env.apiBasePath}/compras`, comprasRoutes);
+app.use(`${env.apiBasePath}/contacto`, contactoRoutes);
 app.use(`${env.apiBasePath}/entradas`, entradasRoutes);
 app.use(
   `${env.apiBasePath}/organizador/mercado-pago`,

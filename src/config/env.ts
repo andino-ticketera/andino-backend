@@ -17,6 +17,12 @@ export const env = {
   cloudinaryApiKey: process.env.CLOUDINARY_API_KEY || "",
   cloudinaryApiSecret: process.env.CLOUDINARY_API_SECRET || "",
   cloudinaryFolder: process.env.CLOUDINARY_FOLDER || "andino-tickets",
+  resendApiKey: process.env.RESEND_API_KEY || "",
+  resendFromEmail:
+    process.env.RESEND_FROM_EMAIL || "contacto@andinotickets.com",
+  resendFromName: process.env.RESEND_FROM_NAME || "Andino Tickets",
+  contactRecipientEmail:
+    process.env.CONTACT_RECIPIENT_EMAIL || "Andinoticketera@gmail.com",
   supabaseUrl: process.env.SUPABASE_URL || "",
   supabaseAnonKey: process.env.SUPABASE_ANON_KEY || "",
   supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY || "",

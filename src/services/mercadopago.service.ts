@@ -3,6 +3,7 @@ import pool, { query } from "../db/pool.js";
 import { env } from "../config/env.js";
 import { AppError } from "../utils/errors.js";
 import { logger } from "../lib/logger.js";
+import { sendPurchaseConfirmationEmail } from "./mail.service.js";
 import type {
   EstadoCompra,
   EstadoMercadoPagoConexion,
@@ -937,6 +938,15 @@ async function approveCompra(
     );
 
     await client.query("COMMIT");
+
+    try {
+      await sendPurchaseConfirmationEmail(compraId);
+    } catch (error) {
+      logger.error("No se pudo enviar el email de confirmacion de compra", {
+        compraId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   } catch (error) {
     await client.query("ROLLBACK");
     throw error;
