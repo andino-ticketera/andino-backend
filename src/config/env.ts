@@ -6,7 +6,7 @@ export const env = {
   apiBasePath: process.env.API_BASE_PATH || "/api",
   databaseUrl:
     process.env.DATABASE_URL || "postgres://localhost:5432/andino_tickets",
-  frontendUrl: process.env.FRONTEND_URL || "http://localhost:3000",
+  frontendUrl: process.env.FRONTEND_URL || "https://andinotickets.com",
   backendPublicUrl:
     process.env.BACKEND_PUBLIC_URL ||
     process.env.PUBLIC_ASSET_BASE_URL ||
@@ -22,7 +22,7 @@ export const env = {
   supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY || "",
   supabasePasswordResetRedirectTo:
     process.env.SUPABASE_PASSWORD_RESET_REDIRECT_TO ||
-    "http://localhost:3000/restablecer-clave",
+    "https://andinotickets.com/restablecer-clave",
   mercadoPagoPlatformAccessToken: process.env.MP_PLATFORM_ACCESS_TOKEN || "",
   mercadoPagoPlatformPublicKey: process.env.MP_PLATFORM_PUBLIC_KEY || "",
   mercadoPagoClientId: process.env.MP_CLIENT_ID || "",

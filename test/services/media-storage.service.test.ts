@@ -45,14 +45,20 @@ describe("media-storage.service", () => {
   it("guarda assets de eventos en filesystem cuando Cloudinary no esta configurado", async () => {
     mocks.isCloudinaryEnabledMock.mockReturnValue(false);
 
-    const assetUrl = await storeEventAsset(buildFile("flyer.png", "demo"), "flyer");
+    const assetUrl = await storeEventAsset(
+      buildFile("flyer.png", "demo"),
+      "flyer",
+    );
 
     expect(assetUrl).toMatch(
       /^http:\/\/localhost:4000\/uploads\/events\/[a-f0-9-]+\.png$/,
     );
 
     const savedFilename = assetUrl.split("/").pop();
-    const savedContent = await fs.readFile(path.join(uploadsDir, savedFilename || ""), "utf8");
+    const savedContent = await fs.readFile(
+      path.join(uploadsDir, savedFilename || ""),
+      "utf8",
+    );
     expect(savedContent).toBe("demo");
   });
 
@@ -62,7 +68,10 @@ describe("media-storage.service", () => {
       secureUrl: "https://res.cloudinary.com/demo/image/upload/evento-demo.png",
     });
 
-    const assetUrl = await storeEventAsset(buildFile("imagen.png", "demo"), "imagen");
+    const assetUrl = await storeEventAsset(
+      buildFile("imagen.png", "demo"),
+      "imagen",
+    );
 
     expect(assetUrl).toBe(
       "https://res.cloudinary.com/demo/image/upload/evento-demo.png",
@@ -79,7 +88,10 @@ describe("media-storage.service", () => {
   it("borra assets locales cuando recibe una URL del backend", async () => {
     mocks.isCloudinaryEnabledMock.mockReturnValue(false);
 
-    const assetUrl = await storeEventAsset(buildFile("imagen.webp", "demo"), "imagen");
+    const assetUrl = await storeEventAsset(
+      buildFile("imagen.webp", "demo"),
+      "imagen",
+    );
     const savedFilename = assetUrl.split("/").pop();
 
     await deleteManagedAsset(assetUrl);

@@ -59,7 +59,9 @@ export async function storeEventAsset(
   return buildLocalAssetUrl(filename);
 }
 
-export async function deleteManagedAsset(assetUrl: string | null | undefined): Promise<void> {
+export async function deleteManagedAsset(
+  assetUrl: string | null | undefined,
+): Promise<void> {
   if (!assetUrl) {
     return;
   }

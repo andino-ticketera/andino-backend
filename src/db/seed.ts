@@ -64,7 +64,10 @@ function roundCurrency(value: number): number {
   return Math.round((value + Number.EPSILON) * 100) / 100;
 }
 
-function buildMpAmounts(precioUnitario: number, cantidad: number): {
+function buildMpAmounts(
+  precioUnitario: number,
+  cantidad: number,
+): {
   precioBase: number;
   costoServicio: number;
   precioTotal: number;
@@ -651,7 +654,9 @@ async function main(): Promise<void> {
       const eventoId = eventoIdsByKey.get(compra.eventoKey);
 
       if (!evento || !eventoId) {
-        throw new Error(`Evento no encontrado para compra: ${compra.eventoKey}`);
+        throw new Error(
+          `Evento no encontrado para compra: ${compra.eventoKey}`,
+        );
       }
 
       const mpAmounts = buildMpAmounts(evento.precio, compra.cantidad);
@@ -715,7 +720,9 @@ async function main(): Promise<void> {
     for (const entrada of entradasSeed) {
       const eventoId = eventoIdsByKey.get(entrada.eventoKey);
       if (!eventoId) {
-        throw new Error(`Evento no encontrado para entrada: ${entrada.eventoKey}`);
+        throw new Error(
+          `Evento no encontrado para entrada: ${entrada.eventoKey}`,
+        );
       }
 
       await client.query(

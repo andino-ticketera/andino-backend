@@ -228,8 +228,10 @@ describe("compras.service", () => {
 
     mocks.buildTicketAssetsMock.mockResolvedValueOnce({
       qrImageDataUrl: "data:image/png;base64,qr-demo",
-      qrImageUrl: "https://res.cloudinary.com/demo/image/upload/entrada-1-qr.png",
-      qrPdfUrl: "https://res.cloudinary.com/demo/raw/upload/entrada-1-ticket.pdf",
+      qrImageUrl:
+        "https://res.cloudinary.com/demo/image/upload/entrada-1-qr.png",
+      qrPdfUrl:
+        "https://res.cloudinary.com/demo/raw/upload/entrada-1-ticket.pdf",
     });
 
     const result = await getEntradaDetalleByUser("user-1", "entrada-1");

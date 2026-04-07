@@ -12,9 +12,7 @@ export interface UploadedAsset {
 
 function hasCloudinaryCredentials(): boolean {
   return Boolean(
-    env.cloudinaryCloudName &&
-      env.cloudinaryApiKey &&
-      env.cloudinaryApiSecret,
+    env.cloudinaryCloudName && env.cloudinaryApiKey && env.cloudinaryApiSecret,
   );
 }
 
@@ -138,7 +136,9 @@ function tryParseCloudinaryAsset(inputUrl: string): {
   }
 }
 
-export async function deleteCloudinaryAssetByUrl(assetUrl: string): Promise<void> {
+export async function deleteCloudinaryAssetByUrl(
+  assetUrl: string,
+): Promise<void> {
   if (!isCloudinaryEnabled()) {
     return;
   }

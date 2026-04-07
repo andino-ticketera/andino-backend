@@ -1,6 +1,9 @@
 import QRCode from "qrcode";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
-import { uploadBufferToCloudinary, isCloudinaryEnabled } from "./cloudinary-assets.service.js";
+import {
+  uploadBufferToCloudinary,
+  isCloudinaryEnabled,
+} from "./cloudinary-assets.service.js";
 
 export interface TicketAssets {
   qrImageDataUrl: string;
