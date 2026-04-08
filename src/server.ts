@@ -110,6 +110,22 @@ app.listen(env.port, () => {
     apiBasePath: env.apiBasePath,
     frontendUrl: env.frontendUrl,
   });
+
+  if (!env.resendApiKey) {
+    logger.warn("Resend no configurado", {
+      missingEnv: "RESEND_API_KEY",
+      note:
+        "Los emails de contacto y compra no se enviaran hasta definir esta variable.",
+    });
+  }
+
+  if (!env.resendFromEmail) {
+    logger.warn("Remitente de Resend no configurado", {
+      missingEnv: "RESEND_FROM_EMAIL",
+      note:
+        "Define un email remitente valido y con dominio verificado en Resend.",
+    });
+  }
 });
 
 export default app;

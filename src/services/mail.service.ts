@@ -46,6 +46,21 @@ interface ValidatedContactMessage {
 
 const resendClient = env.resendApiKey ? new Resend(env.resendApiKey) : null;
 
+function serializeProviderError(error: unknown): Record<string, unknown> {
+  if (!error || typeof error !== "object") {
+    return { raw: String(error) };
+  }
+
+  const candidate = error as Record<string, unknown>;
+  return {
+    name: candidate.name,
+    message: candidate.message,
+    code: candidate.code,
+    statusCode: candidate.statusCode,
+    raw: candidate,
+  };
+}
+
 function escapeHtml(value: string): string {
   return value
     .replace(/&/g, "&amp;")
@@ -223,11 +238,16 @@ export async function sendContactMessageEmail(
   });
 
   if (error) {
-    logger.error("Fallo envio de email de contacto", { error });
+    logger.error("Fallo envio de email de contacto", {
+      from: getFromAddress(),
+      to: [env.contactRecipientEmail],
+      replyTo: message.email,
+      resendError: serializeProviderError(error),
+    });
     throw new AppError(
       502,
       "EMAIL_SEND_ERROR",
-      "No se pudo enviar el mensaje de contacto",
+      "No se pudo enviar el mensaje de contacto. Revisa la configuracion de Resend.",
     );
   }
 }
@@ -423,12 +443,14 @@ export async function sendPurchaseConfirmationEmail(
   if (error) {
     logger.error("Fallo envio de email de compra", {
       compraId,
-      error,
+      from: getFromAddress(),
+      to: [buyerEmail],
+      resendError: serializeProviderError(error),
     });
     throw new AppError(
       502,
       "EMAIL_SEND_ERROR",
-      "No se pudo enviar el email de la compra",
+      "No se pudo enviar el email de la compra. Revisar configuracion de Resend.",
     );
   }
 }
