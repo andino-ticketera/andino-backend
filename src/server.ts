@@ -12,6 +12,7 @@ import authRoutes from "./routes/auth.routes.js";
 import carruselRoutes from "./routes/carrusel.routes.js";
 import comprasRoutes from "./routes/compras.routes.js";
 import contactoRoutes from "./routes/contacto.routes.js";
+import organizadorContactoRoutes from "./routes/organizador-contacto.routes.js";
 import entradasRoutes from "./routes/entradas.routes.js";
 import organizadorMercadoPagoRoutes from "./routes/organizador-mercadopago.routes.js";
 import pagosRoutes from "./routes/pagos.routes.js";
@@ -81,6 +82,7 @@ app.use(`${env.apiBasePath}/auth`, authRoutes);
 app.use(`${env.apiBasePath}/carrusel`, carruselRoutes);
 app.use(`${env.apiBasePath}/compras`, comprasRoutes);
 app.use(`${env.apiBasePath}/contacto`, contactoRoutes);
+app.use(`${env.apiBasePath}/organizador/contacto`, organizadorContactoRoutes);
 app.use(`${env.apiBasePath}/entradas`, entradasRoutes);
 app.use(
   `${env.apiBasePath}/organizador/mercado-pago`,
@@ -114,16 +116,14 @@ app.listen(env.port, () => {
   if (!env.resendApiKey) {
     logger.warn("Resend no configurado", {
       missingEnv: "RESEND_API_KEY",
-      note:
-        "Los emails de contacto y compra no se enviaran hasta definir esta variable.",
+      note: "Los emails de contacto y compra no se enviaran hasta definir esta variable.",
     });
   }
 
   if (!env.resendFromEmail) {
     logger.warn("Remitente de Resend no configurado", {
       missingEnv: "RESEND_FROM_EMAIL",
-      note:
-        "Define un email remitente valido y con dominio verificado en Resend.",
+      note: "Define un email remitente valido y con dominio verificado en Resend.",
     });
   }
 });

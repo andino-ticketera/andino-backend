@@ -17,6 +17,15 @@ interface ContactMessageInput {
   mensaje: string;
 }
 
+interface OrganizerLeadInput {
+  pais: string;
+  nombre: string;
+  apellido: string;
+  empresa: string;
+  email: string;
+  telefono: string;
+}
+
 interface PurchaseEmailRow {
   id: string;
   user_id: string | null;
@@ -42,6 +51,15 @@ interface ValidatedContactMessage {
   email: string;
   asunto: string;
   mensaje: string;
+}
+
+interface ValidatedOrganizerLead {
+  pais: string;
+  nombre: string;
+  apellido: string;
+  empresa: string;
+  email: string;
+  telefono: string;
 }
 
 const resendClient = env.resendApiKey ? new Resend(env.resendApiKey) : null;
@@ -139,6 +157,53 @@ function validateContactMessage(
   return { nombre, email, asunto, mensaje };
 }
 
+function validateOrganizerLead(
+  input: OrganizerLeadInput,
+): ValidatedOrganizerLead {
+  const pais = String(input.pais || "")
+    .trim()
+    .replace(/\s+/g, " ");
+  const nombre = normalizeFullName(input.nombre);
+  const apellido = normalizeFullName(input.apellido);
+  const empresa = String(input.empresa || "")
+    .trim()
+    .replace(/\s+/g, " ");
+  const email = normalizeEmail(input.email);
+  const telefono = String(input.telefono || "")
+    .trim()
+    .replace(/\s+/g, " ");
+
+  if (!pais || pais.length < 2) {
+    throw new AppError(400, "VALIDATION_ERROR", "Ingresa un pais valido");
+  }
+
+  if (!nombre || nombre.length < 2) {
+    throw new AppError(400, "VALIDATION_ERROR", "Ingresa un nombre valido");
+  }
+
+  if (!apellido || apellido.length < 2) {
+    throw new AppError(400, "VALIDATION_ERROR", "Ingresa un apellido valido");
+  }
+
+  if (!empresa || empresa.length < 2) {
+    throw new AppError(
+      400,
+      "VALIDATION_ERROR",
+      "Ingresa una empresa o productora valida",
+    );
+  }
+
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    throw new AppError(400, "VALIDATION_ERROR", "Ingresa un email valido");
+  }
+
+  if (!telefono || telefono.length < 6) {
+    throw new AppError(400, "VALIDATION_ERROR", "Ingresa un telefono valido");
+  }
+
+  return { pais, nombre, apellido, empresa, email, telefono };
+}
+
 function buildEmailLayout(input: {
   pretitle: string;
   title: string;
@@ -183,50 +248,37 @@ function buildEmailLayout(input: {
   `;
 }
 
+function buildInternalNotificationHtml(lines: string[]): string {
+  return `
+    <!doctype html>
+    <html lang="es">
+      <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      </head>
+      <body style="margin:0;padding:24px;background:#ffffff;font-family:Arial,Helvetica,sans-serif;color:#111827;">
+        <pre style="margin:0;white-space:pre-wrap;font:14px/1.6 Arial,Helvetica,sans-serif;">${escapeHtml(lines.join("\n"))}</pre>
+      </body>
+    </html>
+  `;
+}
+
 export async function sendContactMessageEmail(
   input: ContactMessageInput,
 ): Promise<void> {
   const resend = getResendClient();
 
   const message = validateContactMessage(input);
-  const html = buildEmailLayout({
-    pretitle: "Nuevo contacto web",
-    title: message.asunto,
-    intro:
-      "Recibiste una nueva consulta desde el formulario de contacto de Andino Tickets.",
-    bodyHtml: `
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:separate;border-spacing:0 12px;">
-        <tr>
-          <td style="padding:16px;border-radius:14px;background:#2b1840;border:1px solid #4a2d6b;">
-            <div style="font-size:12px;text-transform:uppercase;letter-spacing:1px;color:#8ce7ba;font-weight:700;">Datos de contacto</div>
-            <div style="margin-top:10px;font-size:15px;line-height:1.8;color:#f6f4fb;">
-              <strong>Nombre:</strong> ${escapeHtml(message.nombre)}<br />
-              <strong>Email:</strong> ${escapeHtml(message.email)}<br />
-              <strong>Asunto:</strong> ${escapeHtml(message.asunto)}
-            </div>
-          </td>
-        </tr>
-        <tr>
-          <td style="padding:16px;border-radius:14px;background:#2b1840;border:1px solid #4a2d6b;">
-            <div style="font-size:12px;text-transform:uppercase;letter-spacing:1px;color:#8ce7ba;font-weight:700;">Mensaje</div>
-            <div style="margin-top:10px;font-size:15px;line-height:1.8;color:#f6f4fb;">
-              ${nl2br(message.mensaje)}
-            </div>
-          </td>
-        </tr>
-      </table>
-    `,
-    footerHtml: `Responder a este correo enviara la respuesta a <strong>${escapeHtml(message.email)}</strong>.`,
-  });
-
-  const text = [
+  const textLines = [
     "Nuevo contacto web - Andino Tickets",
     `Nombre: ${message.nombre}`,
     `Email: ${message.email}`,
     `Asunto: ${message.asunto}`,
     "",
     message.mensaje,
-  ].join("\n");
+  ];
+  const text = textLines.join("\n");
+  const html = buildInternalNotificationHtml(textLines);
 
   const { error } = await resend.emails.send({
     from: getFromAddress(),
@@ -248,6 +300,48 @@ export async function sendContactMessageEmail(
       502,
       "EMAIL_SEND_ERROR",
       "No se pudo enviar el mensaje de contacto. Revisa la configuracion de Resend.",
+    );
+  }
+}
+
+export async function sendOrganizerLeadEmail(
+  input: OrganizerLeadInput,
+): Promise<void> {
+  const resend = getResendClient();
+  const lead = validateOrganizerLead(input);
+  const fullName = `${lead.nombre} ${lead.apellido}`.trim();
+
+  const textLines = [
+    "Nuevo lead de organizador - Andino Tickets",
+    `Nombre: ${fullName}`,
+    `Pais: ${lead.pais}`,
+    `Empresa / Productora: ${lead.empresa}`,
+    `Email: ${lead.email}`,
+    `Telefono: ${lead.telefono}`,
+  ];
+  const text = textLines.join("\n");
+  const html = buildInternalNotificationHtml(textLines);
+
+  const { error } = await resend.emails.send({
+    from: getFromAddress(),
+    to: [env.contactRecipientEmail],
+    replyTo: lead.email,
+    subject: `[Organizador] ${fullName} quiere publicar eventos`,
+    html,
+    text,
+  });
+
+  if (error) {
+    logger.error("Fallo envio de email de organizador", {
+      from: getFromAddress(),
+      to: [env.contactRecipientEmail],
+      replyTo: lead.email,
+      resendError: serializeProviderError(error),
+    });
+    throw new AppError(
+      502,
+      "EMAIL_SEND_ERROR",
+      "No se pudo enviar la solicitud de organizador. Revisa la configuracion de Resend.",
     );
   }
 }
