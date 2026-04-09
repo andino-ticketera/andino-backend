@@ -60,10 +60,10 @@ export function validateCreateEvento(
       campo: "descripcion",
       mensaje: "La descripcion es obligatoria",
     });
-  } else if (descripcion.length < 10 || descripcion.length > 2000) {
+  } else if (descripcion.length > 2000) {
     errors.push({
       campo: "descripcion",
-      mensaje: "La descripcion debe tener entre 10 y 2000 caracteres",
+      mensaje: "La descripcion no puede superar los 2000 caracteres",
     });
   }
 
@@ -306,10 +306,10 @@ export function validateUpdateEvento(
   // descripcion
   if (body.descripcion !== undefined) {
     const descripcion = String(body.descripcion).trim();
-    if (descripcion.length < 10 || descripcion.length > 2000) {
+    if (descripcion.length > 2000) {
       errors.push({
         campo: "descripcion",
-        mensaje: "La descripcion debe tener entre 10 y 2000 caracteres",
+        mensaje: "La descripcion no puede superar los 2000 caracteres",
       });
     }
   }
