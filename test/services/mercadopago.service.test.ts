@@ -268,7 +268,7 @@ describe("mercadopago.service", () => {
       eventoTitulo: "Festival Andino",
       cantidad: 2,
       total: 21000,
-      compradorEmail: "ana@example.com",
+      compradorEmail: "ana***@example.com",
       createdAt: createdAt.toISOString(),
     });
   });

@@ -41,10 +41,10 @@ function validatePassword(password: string, errors: ValidationDetail[]): void {
     return;
   }
 
-  if (password.length < 6 || password.length > 72) {
+  if (password.length < 8 || password.length > 72) {
     errors.push({
       campo: "password",
-      mensaje: "La password debe tener entre 6 y 72 caracteres",
+      mensaje: "La password debe tener entre 8 y 72 caracteres",
     });
   }
 }

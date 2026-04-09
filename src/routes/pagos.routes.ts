@@ -1,13 +1,28 @@
 import { Router } from "express";
+import rateLimit from "express-rate-limit";
 import { AppError } from "../utils/errors.js";
 import * as mercadoPagoService from "../services/mercadopago.service.js";
+import { verifyMercadoPagoWebhook } from "../middlewares/webhookSignature.js";
 import type { Request, Response, NextFunction } from "express";
 import type { MercadoPagoPreferenceInput } from "../types/index.js";
+
+// Rate limiter especifico para checkout: 10 requests por IP cada 15 minutos
+const checkoutLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    error: "RATE_LIMIT_EXCEEDED",
+    mensaje: "Demasiadas solicitudes de checkout. Intente nuevamente en unos minutos",
+  },
+});
 
 const router = Router();
 
 router.post(
   "/checkout-pro/preference",
+  checkoutLimiter,
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const body = req.body as Partial<MercadoPagoPreferenceInput>;
@@ -61,6 +76,7 @@ router.get(
 
 router.post(
   "/mercado-pago/webhook",
+  verifyMercadoPagoWebhook,
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const compraId =

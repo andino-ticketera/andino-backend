@@ -91,6 +91,14 @@ interface MercadoPagoPaymentResponse {
   };
 }
 
+/** Enmascara un email para no exponer PII en endpoints publicos: "gas***@gmail.com" */
+function maskEmail(email: string): string {
+  const atIndex = email.indexOf("@");
+  if (atIndex <= 1) return email ? "***@***" : "";
+  const visible = email.slice(0, Math.min(3, atIndex));
+  return `${visible}***${email.slice(atIndex)}`;
+}
+
 function roundCurrency(value: number): number {
   return Math.round((value + Number.EPSILON) * 100) / 100;
 }
@@ -141,6 +149,9 @@ function buildSignedState(userId: string): string {
   return `${payload}.${signature}`;
 }
 
+// Tiempo maximo de validez del state OAuth: 10 minutos
+const OAUTH_STATE_MAX_AGE_MS = 10 * 60 * 1000;
+
 function parseSignedState(state: string): { userId: string; ts: number } {
   const [payload, signature] = state.split(".");
   if (!payload || !signature) {
@@ -152,7 +163,14 @@ function parseSignedState(state: string): { userId: string; ts: number } {
     .update(payload)
     .digest("base64url");
 
-  if (signature !== expected) {
+  // Comparacion en tiempo constante para evitar timing attacks
+  const expectedBuffer = Buffer.from(expected, "utf8");
+  const signatureBuffer = Buffer.from(signature, "utf8");
+
+  if (
+    expectedBuffer.length !== signatureBuffer.length ||
+    !crypto.timingSafeEqual(expectedBuffer, signatureBuffer)
+  ) {
     throw new AppError(400, "MP_STATE_INVALIDO", "State OAuth invalido");
   }
 
@@ -165,6 +183,15 @@ function parseSignedState(state: string): { userId: string; ts: number } {
 
   if (!parsed.userId || !parsed.ts) {
     throw new AppError(400, "MP_STATE_INVALIDO", "State OAuth invalido");
+  }
+
+  // Verificar que el state no haya expirado
+  if (Date.now() - parsed.ts > OAUTH_STATE_MAX_AGE_MS) {
+    throw new AppError(
+      400,
+      "MP_STATE_EXPIRADO",
+      "El enlace de autorizacion de Mercado Pago expiro. Volve a intentarlo desde el panel.",
+    );
   }
 
   return { userId: parsed.userId, ts: parsed.ts };
@@ -771,7 +798,7 @@ export async function getPublicCheckoutStatus(
     eventoTitulo: compra.evento_titulo,
     cantidad: compra.cantidad,
     total: Number.parseFloat(compra.precio_total),
-    compradorEmail: compra.comprador_email || "",
+    compradorEmail: maskEmail(compra.comprador_email || ""),
     createdAt: compra.created_at.toISOString(),
   };
 }

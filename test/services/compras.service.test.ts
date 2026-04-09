@@ -154,8 +154,9 @@ describe("compras.service", () => {
     expect(result.entradas[1]).toMatchObject({
       id: "entrada-2",
       estado: "USADA",
-      qr_token: "qr-2",
     });
+    // qr_token ya no se expone en el resumen de entradas por seguridad
+    expect(result.entradas[1]).not.toHaveProperty("qr_token");
   });
 
   it("bloquea QR cuando la compra esta pendiente", async () => {

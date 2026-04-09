@@ -90,7 +90,6 @@ function buildEntradaResumen(row: EntradaRow): EntradaResumen {
   return {
     id: row.id,
     numero_entrada: row.numero_entrada,
-    qr_token: row.qr_token,
     estado: row.estado,
     fecha_uso: toIsoString(row.usada_at),
   };

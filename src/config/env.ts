@@ -41,13 +41,23 @@ export const env = {
   mercadoPagoOAuthRedirectPath:
     process.env.MP_OAUTH_REDIRECT_PATH ||
     "/api/organizador/mercado-pago/callback",
-  mercadoPagoOAuthStateSecret:
-    process.env.MP_OAUTH_STATE_SECRET || "change-me-mercadopago-state",
+  mercadoPagoOAuthStateSecret: (() => {
+    const secret = process.env.MP_OAUTH_STATE_SECRET;
+    if (!secret || secret === "change-me-mercadopago-state") {
+      if (process.env.NODE_ENV === "production") {
+        throw new Error(
+          "MP_OAUTH_STATE_SECRET debe estar definido en produccion con un valor seguro (minimo 32 caracteres aleatorios)",
+        );
+      }
+      return "dev-only-insecure-state-secret";
+    }
+    return secret;
+  })(),
   mercadoPagoWebhookSecret: process.env.MP_WEBHOOK_SECRET || "",
   mercadoPagoFeePercentage: Number(process.env.MP_FEE_PERCENTAGE || "5"),
   mercadoPagoDevMode:
-    (process.env.MP_DEV_MODE || "true").toLowerCase() === "true",
+    (process.env.MP_DEV_MODE || "false").toLowerCase() === "true",
   mercadoPagoDevUsePlatformAccount:
-    (process.env.MP_DEV_USE_PLATFORM_ACCOUNT || "true").toLowerCase() ===
+    (process.env.MP_DEV_USE_PLATFORM_ACCOUNT || "false").toLowerCase() ===
     "true",
 } as const;

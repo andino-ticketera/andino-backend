@@ -156,7 +156,7 @@ export interface CompraResumen {
 export interface EntradaResumen {
   id: string;
   numero_entrada: number;
-  qr_token: string;
+  qr_token?: string;
   estado: EstadoEntrada;
   fecha_uso?: string;
 }

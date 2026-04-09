@@ -32,7 +32,7 @@ export function errorHandler(
     path: _req.path,
     method: _req.method,
     error: err.message,
-    stack: err.stack,
+    ...(process.env.NODE_ENV !== "production" && { stack: err.stack }),
   });
 
   res.status(500).json({
