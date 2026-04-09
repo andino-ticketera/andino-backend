@@ -1,4 +1,5 @@
 import express from "express";
+import compression from "compression";
 import cors from "cors";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
@@ -38,6 +39,7 @@ function isValidPublicAssetFilename(filename: string): boolean {
 }
 
 // Middlewares globales
+app.use(compression());
 app.use(
   helmet({
     crossOriginResourcePolicy: false,

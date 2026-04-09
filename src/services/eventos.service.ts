@@ -226,18 +226,16 @@ export async function listEventos(
   const whereClause =
     conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
 
-  // Count total
-  const countResult = await query<{ count: string }>(
-    `SELECT COUNT(*) as count FROM eventos ${whereClause}`,
-    params,
-  );
-  const total = parseInt(countResult.rows[0].count, 10);
-
-  // Fetch page
-  const dataResult = await query<EventoRow>(
-    `SELECT * FROM eventos ${whereClause} ORDER BY fecha_evento ASC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`,
+  // Consulta unica: datos + total con window function COUNT(*) OVER()
+  const dataResult = await query<EventoRow & { _total: string }>(
+    `SELECT *, COUNT(*) OVER() AS _total FROM eventos ${whereClause} ORDER BY fecha_evento ASC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`,
     [...params, limit, offset],
   );
+
+  const total =
+    dataResult.rows.length > 0
+      ? parseInt(dataResult.rows[0]._total, 10)
+      : 0;
 
   return {
     data: dataResult.rows.map(rowToEvento),
