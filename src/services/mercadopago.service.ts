@@ -755,11 +755,17 @@ export async function createCheckoutPreference(
     compraId,
   ]);
 
+  // En produccion usar init_point (checkout real).
+  // Solo en dev mode usar sandbox_init_point como fallback.
+  const checkoutUrl = env.mercadoPagoDevMode
+    ? preference.sandbox_init_point || preference.init_point || ""
+    : preference.init_point || preference.sandbox_init_point || "";
+
   return {
     compraId,
     preferenceId: preference.id,
     publicKey: accessContext.publicKey,
-    checkoutUrl: preference.sandbox_init_point || preference.init_point || "",
+    checkoutUrl,
     precioBase,
     costoServicio,
     total,
