@@ -279,6 +279,7 @@ export function validateUpdateEvento(
     "medios_pago",
     "instagram",
     "tiktok",
+    "remove_flyer",
   ];
 
   const hasFields = editableFields.some((f) => body[f] !== undefined);
@@ -450,6 +451,16 @@ export function validateUpdateEvento(
       campo: "flyer",
       mensaje: "Formato de flyer no soportado. Use JPG, PNG o WEBP",
     });
+  }
+
+  if (body.remove_flyer !== undefined) {
+    const removeFlyer = String(body.remove_flyer).trim().toLowerCase();
+    if (removeFlyer !== "true" && removeFlyer !== "false") {
+      errors.push({
+        campo: "remove_flyer",
+        mensaje: "remove_flyer debe ser true o false",
+      });
+    }
   }
 
   // medios_pago

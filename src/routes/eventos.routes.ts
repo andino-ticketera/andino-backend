@@ -330,6 +330,10 @@ router.put(
       flyerUrl = files?.flyer?.[0]
         ? await storeEventAsset(files.flyer[0], "flyer")
         : undefined;
+      const removeFlyer =
+        String(req.body.remove_flyer || "")
+          .trim()
+          .toLowerCase() === "true" && !files?.flyer?.[0];
 
       const effectiveMediosPago =
         req.body.medios_pago !== undefined
@@ -347,13 +351,14 @@ router.put(
         req.body,
         imagenUrl,
         flyerUrl,
+        { removeFlyer },
       );
 
       await Promise.all([
         files?.imagen?.[0]
           ? deleteManagedAsset(currentEvento.imagen_url)
           : Promise.resolve(),
-        files?.flyer?.[0]
+        files?.flyer?.[0] || removeFlyer
           ? deleteManagedAsset(currentEvento.flyer_url)
           : Promise.resolve(),
       ]);

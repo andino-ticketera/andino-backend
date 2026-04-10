@@ -48,6 +48,40 @@ export async function requireAuth(
   }
 }
 
+// Middleware de auth opcional: si llega un Bearer token valido, popula req.user;
+// si no llega token o es invalido, continua igual sin cortar la request.
+// Se usa para endpoints publicos que tambien aceptan usuarios autenticados
+// (por ejemplo el checkout de Mercado Pago, que soporta guest y logueado).
+export async function optionalAuth(
+  req: Request,
+  _res: Response,
+  next: NextFunction,
+): Promise<void> {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    next();
+    return;
+  }
+
+  const token = authHeader.slice("Bearer ".length).trim();
+  if (!token) {
+    next();
+    return;
+  }
+
+  try {
+    const authUser = await getAuthUserFromToken(token);
+    req.user = authUser;
+  } catch (err) {
+    // Si el token es invalido o expirado, seguimos como guest.
+    logger.warn("optionalAuth: token invalido, continuando como guest", {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+
+  next();
+}
+
 export function requireRole(allowedRoles: RolUsuario[]) {
   return (req: Request, _res: Response, next: NextFunction): void => {
     if (!req.user) {

@@ -66,6 +66,7 @@ export interface UpdateEventoDTO {
   medios_pago?: MedioPago[];
   instagram?: string;
   tiktok?: string;
+  remove_flyer?: boolean;
 }
 
 export interface AuthUser {

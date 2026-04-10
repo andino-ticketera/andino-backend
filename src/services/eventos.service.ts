@@ -233,9 +233,7 @@ export async function listEventos(
   );
 
   const total =
-    dataResult.rows.length > 0
-      ? parseInt(dataResult.rows[0]._total, 10)
-      : 0;
+    dataResult.rows.length > 0 ? parseInt(dataResult.rows[0]._total, 10) : 0;
 
   return {
     data: dataResult.rows.map(rowToEvento),
@@ -279,6 +277,7 @@ export async function updateEvento(
   dto: UpdateEventoDTO,
   imagenUrl?: string,
   flyerUrl?: string,
+  options?: { removeFlyer?: boolean },
 ): Promise<Evento> {
   // Buscar evento actual (incluyendo CANCELADO para dar 404 correcto)
   const current = await query<EventoRow>(
@@ -348,6 +347,10 @@ export async function updateEvento(
   if (flyerUrl) {
     setClauses.push(`flyer_url = $${paramIndex}`);
     params.push(flyerUrl);
+    paramIndex++;
+  } else if (options?.removeFlyer) {
+    setClauses.push(`flyer_url = $${paramIndex}`);
+    params.push(null);
     paramIndex++;
   }
 

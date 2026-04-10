@@ -3,6 +3,7 @@ import rateLimit from "express-rate-limit";
 import { AppError } from "../utils/errors.js";
 import * as mercadoPagoService from "../services/mercadopago.service.js";
 import { verifyMercadoPagoWebhook } from "../middlewares/webhookSignature.js";
+import { optionalAuth } from "../middlewares/auth.js";
 import type { Request, Response, NextFunction } from "express";
 import type { MercadoPagoPreferenceInput } from "../types/index.js";
 
@@ -23,6 +24,12 @@ const router = Router();
 router.post(
   "/checkout-pro/preference",
   checkoutLimiter,
+  // Auth opcional: si llega un Bearer token valido, asociamos la compra al
+  // user_id del usuario logueado. Si no hay token (o es invalido), la compra
+  // queda como guest (user_id = null) pero igual se persisten los datos del
+  // comprador del form. Sin este middleware, req.user siempre era undefined
+  // y TODAS las compras quedaban como invitado, aun con usuario logueado.
+  optionalAuth,
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const body = req.body as Partial<MercadoPagoPreferenceInput>;
