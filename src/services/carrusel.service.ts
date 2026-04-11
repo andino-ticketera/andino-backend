@@ -16,19 +16,42 @@ function rowToCarruselEvento(row: CarruselEventoRow): CarruselEvento {
   };
 }
 
+function isVisibleInAppColumnMissing(error: unknown): boolean {
+  const dbError = error as { code?: string; message?: string };
+  return (
+    dbError?.code === "42703" &&
+    String(dbError.message || "").includes("visible_en_app")
+  );
+}
+
 async function ensureEventosExistAndAreVisible(
   eventIds: string[],
 ): Promise<void> {
   if (eventIds.length === 0) return;
 
-  const result = await query<ExistingEventoRow>(
-    `SELECT id
-     FROM eventos
-     WHERE id = ANY($1::uuid[])
-       AND estado IN ('ACTIVO', 'AGOTADO')
-       AND visible_en_app = TRUE`,
-    [eventIds],
-  );
+  let result;
+  try {
+    result = await query<ExistingEventoRow>(
+      `SELECT id
+       FROM eventos
+       WHERE id = ANY($1::uuid[])
+         AND estado IN ('ACTIVO', 'AGOTADO')
+         AND visible_en_app = TRUE`,
+      [eventIds],
+    );
+  } catch (error) {
+    if (!isVisibleInAppColumnMissing(error)) {
+      throw error;
+    }
+
+    result = await query<ExistingEventoRow>(
+      `SELECT id
+       FROM eventos
+       WHERE id = ANY($1::uuid[])
+         AND estado IN ('ACTIVO', 'AGOTADO')`,
+      [eventIds],
+    );
+  }
 
   const existingIds = new Set(result.rows.map((row) => row.id));
   const invalidIds = eventIds.filter((id) => !existingIds.has(id));
@@ -49,14 +72,29 @@ async function ensureEventosExistAndAreVisible(
 }
 
 export async function listCarruselEventos(): Promise<CarruselEvento[]> {
-  const result = await query<CarruselEventoRow>(
-    `SELECT c.evento_id
-     FROM carrusel_eventos c
-     INNER JOIN eventos e ON e.id = c.evento_id
-     WHERE e.estado IN ('ACTIVO', 'AGOTADO')
-       AND e.visible_en_app = TRUE
-     ORDER BY c.created_at ASC`,
-  );
+  let result;
+  try {
+    result = await query<CarruselEventoRow>(
+      `SELECT c.evento_id
+       FROM carrusel_eventos c
+       INNER JOIN eventos e ON e.id = c.evento_id
+       WHERE e.estado IN ('ACTIVO', 'AGOTADO')
+         AND e.visible_en_app = TRUE
+       ORDER BY c.created_at ASC`,
+    );
+  } catch (error) {
+    if (!isVisibleInAppColumnMissing(error)) {
+      throw error;
+    }
+
+    result = await query<CarruselEventoRow>(
+      `SELECT c.evento_id
+       FROM carrusel_eventos c
+       INNER JOIN eventos e ON e.id = c.evento_id
+       WHERE e.estado IN ('ACTIVO', 'AGOTADO')
+       ORDER BY c.created_at ASC`,
+    );
+  }
 
   return result.rows.map(rowToCarruselEvento);
 }

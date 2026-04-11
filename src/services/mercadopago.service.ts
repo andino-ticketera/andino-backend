@@ -36,7 +36,7 @@ interface EventoCheckoutRow {
   cantidad_entradas: number;
   entradas_vendidas: number;
   estado: string;
-  visible_en_app: boolean;
+  visible_en_app?: boolean;
   medios_pago: MedioPago[];
   creador_id: string;
 }
@@ -80,6 +80,14 @@ interface MercadoPagoPreferenceResponse {
   id?: string;
   init_point?: string;
   sandbox_init_point?: string;
+}
+
+function isVisibleInAppColumnMissing(error: unknown): boolean {
+  const dbError = error as { code?: string; message?: string };
+  return (
+    dbError?.code === "42703" &&
+    String(dbError.message || "").includes("visible_en_app")
+  );
 }
 
 interface MercadoPagoPaymentResponse {
@@ -565,13 +573,28 @@ export async function createCheckoutPreference(
 ): Promise<MercadoPagoPreferenceResult> {
   validateBuyer(input);
 
-  const eventResult = await query<EventoCheckoutRow>(
-    `SELECT id, titulo, precio, cantidad_entradas, entradas_vendidas, estado, visible_en_app, medios_pago, creador_id
-    FROM eventos
-    WHERE id = $1
-    LIMIT 1`,
-    [input.eventoId],
-  );
+  let eventResult;
+  try {
+    eventResult = await query<EventoCheckoutRow>(
+      `SELECT id, titulo, precio, cantidad_entradas, entradas_vendidas, estado, visible_en_app, medios_pago, creador_id
+      FROM eventos
+      WHERE id = $1
+      LIMIT 1`,
+      [input.eventoId],
+    );
+  } catch (error) {
+    if (!isVisibleInAppColumnMissing(error)) {
+      throw error;
+    }
+
+    eventResult = await query<EventoCheckoutRow>(
+      `SELECT id, titulo, precio, cantidad_entradas, entradas_vendidas, estado, medios_pago, creador_id
+      FROM eventos
+      WHERE id = $1
+      LIMIT 1`,
+      [input.eventoId],
+    );
+  }
 
   const evento = eventResult.rows[0];
   if (

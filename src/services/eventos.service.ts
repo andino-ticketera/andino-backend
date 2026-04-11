@@ -96,6 +96,14 @@ function parseBooleanLike(value: unknown): boolean {
   return String(value).trim().toLowerCase() === "true";
 }
 
+function isVisibleInAppColumnMissing(error: unknown): boolean {
+  const dbError = error as { code?: string; message?: string };
+  return (
+    dbError?.code === "42703" &&
+    String(dbError.message || "").includes("visible_en_app")
+  );
+}
+
 /**
  * Resuelve a quién le queda asignado el evento. Solo un ADMIN puede delegar
  * la titularidad a un organizador existente pasando `organizador_id`. Si el
@@ -278,8 +286,6 @@ export async function listEventos(
   const params: unknown[] = [];
   let paramIndex = 1;
 
-  conditions.push(`visible_en_app = TRUE`);
-
   // Estado filter (default: ACTIVO + AGOTADO, nunca CANCELADO en publico)
   const estados = filters.estado
     ? filters.estado.split(",").map((s) => s.trim().toUpperCase())
@@ -321,12 +327,27 @@ export async function listEventos(
 
   const whereClause =
     conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+  const whereClauseWithVisibility = whereClause
+    ? `WHERE visible_en_app = TRUE AND ${conditions.join(" AND ")}`
+    : `WHERE visible_en_app = TRUE`;
 
   // Consulta unica: datos + total con window function COUNT(*) OVER()
-  const dataResult = await query<EventoRow & { _total: string }>(
-    `SELECT *, COUNT(*) OVER() AS _total FROM eventos ${whereClause} ORDER BY fecha_evento ASC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`,
-    [...params, limit, offset],
-  );
+  let dataResult;
+  try {
+    dataResult = await query<EventoRow & { _total: string }>(
+      `SELECT *, COUNT(*) OVER() AS _total FROM eventos ${whereClauseWithVisibility} ORDER BY fecha_evento ASC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`,
+      [...params, limit, offset],
+    );
+  } catch (error) {
+    if (!isVisibleInAppColumnMissing(error)) {
+      throw error;
+    }
+
+    dataResult = await query<EventoRow & { _total: string }>(
+      `SELECT *, COUNT(*) OVER() AS _total FROM eventos ${whereClause} ORDER BY fecha_evento ASC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`,
+      [...params, limit, offset],
+    );
+  }
 
   const total =
     dataResult.rows.length > 0 ? parseInt(dataResult.rows[0]._total, 10) : 0;
@@ -343,13 +364,27 @@ export async function listEventos(
 }
 
 export async function getEventoById(id: string): Promise<Evento> {
-  const result = await query<EventoRow>(
-    `SELECT * FROM eventos
-     WHERE id = $1
-       AND estado != 'CANCELADO'
-       AND visible_en_app = TRUE`,
-    [id],
-  );
+  let result;
+  try {
+    result = await query<EventoRow>(
+      `SELECT * FROM eventos
+       WHERE id = $1
+         AND estado != 'CANCELADO'
+         AND visible_en_app = TRUE`,
+      [id],
+    );
+  } catch (error) {
+    if (!isVisibleInAppColumnMissing(error)) {
+      throw error;
+    }
+
+    result = await query<EventoRow>(
+      `SELECT * FROM eventos
+       WHERE id = $1
+         AND estado != 'CANCELADO'`,
+      [id],
+    );
+  }
 
   if (result.rows.length === 0) {
     throw new AppError(
