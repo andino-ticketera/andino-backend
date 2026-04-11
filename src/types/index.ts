@@ -31,6 +31,7 @@ export interface Evento {
   estado: EstadoEvento;
   creador_id: string;
   creador_rol: CreadorRol;
+  creado_por_admin_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -50,6 +51,10 @@ export interface CreateEventoDTO {
   instagram?: string;
   tiktok?: string;
   idempotency_key?: string;
+  // Solo es respetado cuando el caller tiene rol ADMIN. Permite que el admin
+  // de alta un evento a nombre de un organizador existente (caso de onboarding
+  // asistido). Si el caller no es ADMIN, el backend lo ignora silenciosamente.
+  organizador_id?: string;
 }
 
 export interface UpdateEventoDTO {

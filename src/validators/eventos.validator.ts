@@ -3,6 +3,14 @@ import type { ValidationDetail, MedioPago } from "../types/index.js";
 const MEDIOS_PAGO_VALIDOS: MedioPago[] = ["TRANSFERENCIA_CBU", "MERCADO_PAGO"];
 const IMAGEN_MIMETYPES = ["image/jpeg", "image/png", "image/webp"];
 
+// UUID v1-v5 estandar (caso-insensitive)
+const UUID_REGEX =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function isValidUuid(value: string): boolean {
+  return UUID_REGEX.test(value);
+}
+
 function isValidISODate(value: string): boolean {
   const d = new Date(value);
   return !isNaN(d.getTime());
@@ -251,6 +259,23 @@ export function validateCreateEvento(
       errors.push({
         campo: "tiktok",
         mensaje: "TikTok debe ser una URL valida o @usuario",
+      });
+    }
+  }
+
+  // organizador_id (opcional, solo para ADMIN). Acá validamos únicamente
+  // el formato; la existencia y el rol del usuario destino se chequean en
+  // el service consultando Supabase.
+  if (
+    body.organizador_id !== undefined &&
+    body.organizador_id !== null &&
+    String(body.organizador_id).trim() !== ""
+  ) {
+    const organizadorId = String(body.organizador_id).trim();
+    if (!isValidUuid(organizadorId)) {
+      errors.push({
+        campo: "organizador_id",
+        mensaje: "organizador_id debe ser un UUID valido",
       });
     }
   }

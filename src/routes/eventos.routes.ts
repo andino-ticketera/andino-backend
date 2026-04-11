@@ -166,11 +166,24 @@ router.post(
         ? await storeEventAsset(files.flyer[0], "flyer")
         : null;
 
-      await assertMercadoPagoEventEnabled(
-        req.user!.id,
-        req.user!.role,
-        parseMediosPago(req.body.medios_pago),
-      );
+      // Si un admin está asignando el evento a otro organizador via
+      // `organizador_id`, salteamos el chequeo de "MP conectado": el
+      // organizador puede conectar su Mercado Pago después y, mientras
+      // tanto, el checkout fallará al intentar pagar (mismo comportamiento
+      // que hoy cuando un organizador no tiene MP vinculado).
+      const organizadorIdRaw = String(req.body.organizador_id || "").trim();
+      const adminAsignaAOtro =
+        req.user!.role === "ADMIN" &&
+        organizadorIdRaw !== "" &&
+        organizadorIdRaw !== req.user!.id;
+
+      if (!adminAsignaAOtro) {
+        await assertMercadoPagoEventEnabled(
+          req.user!.id,
+          req.user!.role,
+          parseMediosPago(req.body.medios_pago),
+        );
+      }
 
       const result = await eventosService.createEvento(
         req.body,

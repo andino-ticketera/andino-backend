@@ -9,8 +9,10 @@ import type {
   ListEventosQuery,
   MedioPago,
   ValidationDetail,
+  CreadorRol,
 } from "../types/index.js";
 import { parseMediosPago } from "../validators/eventos.validator.js";
+import { getPublicUserById } from "./auth.service.js";
 
 interface EventoRow {
   id: string;
@@ -33,6 +35,7 @@ interface EventoRow {
   estado: string;
   creador_id: string;
   creador_rol: string;
+  creado_por_admin_id: string | null;
   idempotency_key: string | null;
   created_at: Date;
   updated_at: Date;
@@ -80,8 +83,84 @@ function rowToEvento(row: EventoRow): Evento {
     estado: row.estado as Evento["estado"],
     creador_id: row.creador_id,
     creador_rol: row.creador_rol as Evento["creador_rol"],
+    creado_por_admin_id: row.creado_por_admin_id,
     created_at: row.created_at.toISOString(),
     updated_at: row.updated_at.toISOString(),
+  };
+}
+
+/**
+ * Resuelve a quién le queda asignado el evento. Solo un ADMIN puede delegar
+ * la titularidad a un organizador existente pasando `organizador_id`. Si el
+ * caller no es ADMIN, el campo se ignora silenciosamente (seguridad: evita
+ * que un organizador intente asignar eventos a otro usuario).
+ */
+async function resolveEventoOwnership(
+  dto: CreateEventoDTO,
+  caller: AuthUser,
+): Promise<{
+  creadorId: string;
+  creadorRol: CreadorRol;
+  creadoPorAdminId: string | null;
+}> {
+  const rawOrganizadorId = String(dto.organizador_id || "").trim();
+
+  if (caller.role !== "ADMIN" || !rawOrganizadorId) {
+    return {
+      creadorId: caller.id,
+      creadorRol: caller.role as CreadorRol,
+      creadoPorAdminId: null,
+    };
+  }
+
+  // Admin asignando el evento a un organizador existente.
+  if (rawOrganizadorId === caller.id) {
+    // Admin se asigna a sí mismo: equivalente a no pasar el campo.
+    return {
+      creadorId: caller.id,
+      creadorRol: "ADMIN",
+      creadoPorAdminId: null,
+    };
+  }
+
+  const target = await getPublicUserById(rawOrganizadorId);
+  if (!target) {
+    throw new AppError(
+      400,
+      "ORGANIZADOR_INVALIDO",
+      "El organizador destino no existe",
+      [
+        {
+          campo: "organizador_id",
+          mensaje: "No se encontro el usuario destino",
+        },
+      ],
+    );
+  }
+
+  if (target.rol !== "ORGANIZADOR" && target.rol !== "ADMIN") {
+    throw new AppError(
+      400,
+      "ORGANIZADOR_INVALIDO",
+      "El usuario destino no es un organizador",
+      [
+        {
+          campo: "organizador_id",
+          mensaje:
+            "El usuario destino debe tener rol ORGANIZADOR para recibir el evento",
+        },
+      ],
+    );
+  }
+
+  return {
+    creadorId: target.id,
+    // Siempre lo registramos como ORGANIZADOR aunque el destino sea ADMIN,
+    // para mantener la semántica de que el dueño operativo del evento es
+    // un organizador. Esto también evita que se mezcle con el listado de
+    // "eventos creados por un admin".
+    creadorRol: "ORGANIZADOR",
+    creadoPorAdminId: caller.id,
   };
 }
 
@@ -93,11 +172,18 @@ export async function createEvento(
 ): Promise<CreateEventoResult> {
   const mediosPago = parseMediosPago(dto.medios_pago);
 
-  // Verificar idempotency_key
+  // Resolver titularidad: admin puede asignar el evento a un organizador
+  // existente via dto.organizador_id. Si el caller no es admin o no envia
+  // el campo, el evento queda a nombre del caller (comportamiento legacy).
+  const ownership = await resolveEventoOwnership(dto, user);
+
+  // Verificar idempotency_key contra el creador resuelto (no contra el
+  // caller), asi el replay funciona igual cuando un admin vuelve a enviar
+  // el mismo request en nombre del mismo organizador.
   if (dto.idempotency_key) {
     const existing = await query<EventoRow>(
       `SELECT * FROM eventos WHERE creador_id = $1 AND idempotency_key = $2`,
-      [user.id, dto.idempotency_key],
+      [ownership.creadorId, dto.idempotency_key],
     );
     if (existing.rows.length > 0) {
       return {
@@ -113,8 +199,8 @@ export async function createEvento(
         titulo, descripcion, fecha_evento, locacion, direccion,
         provincia, localidad, precio, cantidad_entradas, categoria,
         imagen_url, flyer_url, medios_pago, instagram, tiktok,
-        creador_id, creador_rol, idempotency_key
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
+        creador_id, creador_rol, creado_por_admin_id, idempotency_key
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
       RETURNING *`,
       [
         dto.titulo.trim(),
@@ -132,8 +218,9 @@ export async function createEvento(
         mediosPago,
         dto.instagram?.trim() || null,
         dto.tiktok?.trim() || null,
-        user.id,
-        user.role,
+        ownership.creadorId,
+        ownership.creadorRol,
+        ownership.creadoPorAdminId,
         dto.idempotency_key || null,
       ],
     );
@@ -159,7 +246,7 @@ export async function createEvento(
     ) {
       const existing = await query<EventoRow>(
         `SELECT * FROM eventos WHERE creador_id = $1 AND idempotency_key = $2`,
-        [user.id, dto.idempotency_key],
+        [ownership.creadorId, dto.idempotency_key],
       );
       if (existing.rows.length > 0) {
         return {

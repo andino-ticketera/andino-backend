@@ -75,6 +75,41 @@ describe("eventos.validator - create", () => {
     expect(errors.some((error) => error.campo === "instagram")).toBe(true);
     expect(errors.some((error) => error.campo === "tiktok")).toBe(true);
   });
+
+  it("acepta organizador_id con formato UUID valido (admin asigna a otro)", () => {
+    const body = buildValidCreateBody();
+    body.organizador_id = "5f4d3c2b-1a9b-4c8d-8e7f-0a1b2c3d4e5f";
+
+    const errors = validateCreateEvento(body, {
+      imagen: [mockImageFile("image/jpeg")],
+    });
+
+    expect(errors).toEqual([]);
+  });
+
+  it("falla cuando organizador_id no es un UUID valido", () => {
+    const body = buildValidCreateBody();
+    body.organizador_id = "no-es-un-uuid";
+
+    const errors = validateCreateEvento(body, {
+      imagen: [mockImageFile("image/jpeg")],
+    });
+
+    expect(errors.some((error) => error.campo === "organizador_id")).toBe(true);
+  });
+
+  it("ignora organizador_id vacio sin marcarlo como error", () => {
+    const body = buildValidCreateBody();
+    body.organizador_id = "";
+
+    const errors = validateCreateEvento(body, {
+      imagen: [mockImageFile("image/jpeg")],
+    });
+
+    expect(errors.some((error) => error.campo === "organizador_id")).toBe(
+      false,
+    );
+  });
 });
 
 describe("eventos.validator - update", () => {
