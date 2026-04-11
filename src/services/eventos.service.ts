@@ -33,6 +33,7 @@ interface EventoRow {
   instagram: string | null;
   tiktok: string | null;
   estado: string;
+  visible_en_app: boolean;
   creador_id: string;
   creador_rol: string;
   creado_por_admin_id: string | null;
@@ -81,12 +82,18 @@ function rowToEvento(row: EventoRow): Evento {
     instagram: row.instagram,
     tiktok: row.tiktok,
     estado: row.estado as Evento["estado"],
+    visible_en_app: row.visible_en_app !== false,
     creador_id: row.creador_id,
     creador_rol: row.creador_rol as Evento["creador_rol"],
     creado_por_admin_id: row.creado_por_admin_id,
     created_at: row.created_at.toISOString(),
     updated_at: row.updated_at.toISOString(),
   };
+}
+
+function parseBooleanLike(value: unknown): boolean {
+  if (typeof value === "boolean") return value;
+  return String(value).trim().toLowerCase() === "true";
 }
 
 /**
@@ -271,6 +278,8 @@ export async function listEventos(
   const params: unknown[] = [];
   let paramIndex = 1;
 
+  conditions.push(`visible_en_app = TRUE`);
+
   // Estado filter (default: ACTIVO + AGOTADO, nunca CANCELADO en publico)
   const estados = filters.estado
     ? filters.estado.split(",").map((s) => s.trim().toUpperCase())
@@ -335,7 +344,10 @@ export async function listEventos(
 
 export async function getEventoById(id: string): Promise<Evento> {
   const result = await query<EventoRow>(
-    `SELECT * FROM eventos WHERE id = $1 AND estado != 'CANCELADO'`,
+    `SELECT * FROM eventos
+     WHERE id = $1
+       AND estado != 'CANCELADO'
+       AND visible_en_app = TRUE`,
     [id],
   );
 
@@ -354,6 +366,16 @@ export async function listEventosByCreator(userId: string): Promise<Evento[]> {
   const result = await query<EventoRow>(
     `SELECT * FROM eventos WHERE creador_id = $1 AND estado != 'CANCELADO' ORDER BY created_at DESC`,
     [userId],
+  );
+
+  return result.rows.map(rowToEvento);
+}
+
+export async function listEventosForAdmin(): Promise<Evento[]> {
+  const result = await query<EventoRow>(
+    `SELECT * FROM eventos
+     WHERE estado != 'CANCELADO'
+     ORDER BY created_at DESC`,
   );
 
   return result.rows.map(rowToEvento);
@@ -418,6 +440,12 @@ export async function updateEvento(
     fields.push({ key: "instagram", value: dto.instagram.trim() || null });
   if (dto.tiktok !== undefined)
     fields.push({ key: "tiktok", value: dto.tiktok.trim() || null });
+  if (dto.visible_en_app !== undefined) {
+    fields.push({
+      key: "visible_en_app",
+      value: parseBooleanLike(dto.visible_en_app),
+    });
+  }
 
   for (const field of fields) {
     setClauses.push(`${field.key} = $${paramIndex}`);
@@ -473,6 +501,10 @@ export async function updateEvento(
     throw err;
   }
 
+  if (result.rows[0]?.visible_en_app === false) {
+    await query(`DELETE FROM carrusel_eventos WHERE evento_id = $1`, [id]);
+  }
+
   return rowToEvento(result.rows[0]);
 }
 
@@ -493,6 +525,8 @@ export async function deleteEvento(
   }
 
   const evento = current.rows[0];
+
+  await query(`DELETE FROM carrusel_eventos WHERE evento_id = $1`, [id]);
 
   if (evento.entradas_vendidas === 0) {
     // Eliminacion fisica

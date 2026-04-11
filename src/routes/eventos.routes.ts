@@ -246,6 +246,20 @@ router.get(
   },
 );
 
+router.get(
+  "/admin/todos",
+  requireAuth,
+  requireRole(["ADMIN"]),
+  async (_req: Request, res: Response, next: NextFunction) => {
+    try {
+      const eventos = await eventosService.listEventosForAdmin();
+      res.json({ data: eventos });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
 // ── GET /api/eventos/:id ──────────────────────────────────────────
 router.get("/:id", async (req: Request, res: Response, next: NextFunction) => {
   try {

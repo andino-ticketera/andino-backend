@@ -36,6 +36,7 @@ interface EventoCheckoutRow {
   cantidad_entradas: number;
   entradas_vendidas: number;
   estado: string;
+  visible_en_app: boolean;
   medios_pago: MedioPago[];
   creador_id: string;
 }
@@ -565,7 +566,7 @@ export async function createCheckoutPreference(
   validateBuyer(input);
 
   const eventResult = await query<EventoCheckoutRow>(
-    `SELECT id, titulo, precio, cantidad_entradas, entradas_vendidas, estado, medios_pago, creador_id
+    `SELECT id, titulo, precio, cantidad_entradas, entradas_vendidas, estado, visible_en_app, medios_pago, creador_id
     FROM eventos
     WHERE id = $1
     LIMIT 1`,
@@ -573,7 +574,11 @@ export async function createCheckoutPreference(
   );
 
   const evento = eventResult.rows[0];
-  if (!evento || evento.estado === "CANCELADO") {
+  if (
+    !evento ||
+    evento.estado === "CANCELADO" ||
+    evento.visible_en_app === false
+  ) {
     throw new AppError(
       404,
       "EVENTO_NO_ENCONTRADO",

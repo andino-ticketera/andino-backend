@@ -1,7 +1,9 @@
 import { query } from "../db/pool.js";
 import { AppError } from "../utils/errors.js";
 import type {
+  AuthUser,
   CompraDetalle,
+  CompraGestionResumen,
   CompraResumen,
   EntradaDetalle,
   EntradaResumen,
@@ -57,6 +59,21 @@ interface PerfilCompradorRow {
   comprador_tipo_documento: string | null;
 }
 
+interface CompraGestionRow extends CompraListRow {
+  comprador_nombre: string | null;
+  comprador_apellido: string | null;
+  comprador_email: string | null;
+  comprador_documento: string | null;
+  comprador_tipo_documento: string | null;
+  entradas_usadas: number;
+}
+
+interface CompraOwnerRow {
+  id: string;
+  estado: EstadoCompra;
+  creador_id: string;
+}
+
 function toNumber(value: string): number {
   return Number.parseFloat(value);
 }
@@ -92,6 +109,21 @@ function buildEntradaResumen(row: EntradaRow): EntradaResumen {
     numero_entrada: row.numero_entrada,
     estado: row.estado,
     fecha_uso: toIsoString(row.usada_at),
+  };
+}
+
+function buildCompraGestionResumen(
+  row: CompraGestionRow,
+  organizerName: string,
+): CompraGestionResumen {
+  return {
+    ...buildCompraResumen(row, organizerName),
+    comprador_nombre: row.comprador_nombre?.trim() || "",
+    comprador_apellido: row.comprador_apellido?.trim() || "",
+    comprador_email: row.comprador_email?.trim() || "",
+    comprador_documento: row.comprador_documento?.trim() || "",
+    comprador_tipo_documento: row.comprador_tipo_documento?.trim() || "DNI",
+    entradas_usadas: Number(row.entradas_usadas || 0),
   };
 }
 
@@ -152,6 +184,90 @@ export async function listComprasByUser(
       organizerNames.get(row.creador_id) || "Organizador",
     ),
   );
+}
+
+async function listComprasGestionadas(
+  whereClause: string,
+  params: unknown[],
+  options?: { limit?: number; offset?: number },
+): Promise<CompraGestionResumen[]> {
+  const limit = Math.min(Math.max(options?.limit ?? 500, 1), 1000);
+  const offset = Math.max(options?.offset ?? 0, 0);
+  const limitPosition = params.length + 1;
+  const offsetPosition = params.length + 2;
+
+  const result = await query<CompraGestionRow>(
+    `SELECT
+      c.id,
+      c.user_id,
+      c.evento_id,
+      e.titulo AS evento_titulo,
+      e.fecha_evento,
+      CONCAT(e.locacion, ', ', e.localidad, ', ', e.provincia) AS ubicacion_evento,
+      e.creador_id,
+      c.cantidad,
+      c.precio_unitario,
+      c.precio_total,
+      c.metodo_pago,
+      c.estado,
+      c.created_at AS fecha_compra,
+      c.comprador_nombre,
+      c.comprador_apellido,
+      c.comprador_email,
+      c.comprador_documento,
+      c.comprador_tipo_documento,
+      COALESCE(COUNT(en.id) FILTER (WHERE en.estado = 'USADA'), 0)::int AS entradas_usadas
+    FROM compras c
+    INNER JOIN eventos e ON e.id = c.evento_id
+    LEFT JOIN entradas en ON en.compra_id = c.id
+    ${whereClause}
+    GROUP BY
+      c.id,
+      c.user_id,
+      c.evento_id,
+      e.titulo,
+      e.fecha_evento,
+      e.locacion,
+      e.localidad,
+      e.provincia,
+      e.creador_id,
+      c.cantidad,
+      c.precio_unitario,
+      c.precio_total,
+      c.metodo_pago,
+      c.estado,
+      c.created_at,
+      c.comprador_nombre,
+      c.comprador_apellido,
+      c.comprador_email,
+      c.comprador_documento,
+      c.comprador_tipo_documento
+    ORDER BY c.created_at DESC
+    LIMIT $${limitPosition} OFFSET $${offsetPosition}`,
+    [...params, limit, offset],
+  );
+
+  const organizerNames = await resolveOrganizerNames(result.rows);
+
+  return result.rows.map((row) =>
+    buildCompraGestionResumen(
+      row,
+      organizerNames.get(row.creador_id) || "Organizador",
+    ),
+  );
+}
+
+export async function listComprasForAdmin(
+  options?: { limit?: number; offset?: number },
+): Promise<CompraGestionResumen[]> {
+  return listComprasGestionadas("", [], options);
+}
+
+export async function listComprasByOrganizer(
+  userId: string,
+  options?: { limit?: number; offset?: number },
+): Promise<CompraGestionResumen[]> {
+  return listComprasGestionadas("WHERE e.creador_id = $1", [userId], options);
 }
 
 export async function getCompraDetalleByUser(
@@ -345,5 +461,75 @@ export async function getEntradaDetalleByUser(
       nombre_completo: buyer.nombreCompleto,
       email: buyer.email,
     },
+  };
+}
+
+export async function setCompraCheckInStatus(
+  authUser: AuthUser,
+  compraId: string,
+  checkedIn: boolean,
+): Promise<{ compraId: string; entradasUsadas: number }> {
+  const result = await query<CompraOwnerRow>(
+    `SELECT
+      c.id,
+      c.estado,
+      e.creador_id
+    FROM compras c
+    INNER JOIN eventos e ON e.id = c.evento_id
+    WHERE c.id = $1
+    LIMIT 1`,
+    [compraId],
+  );
+
+  const compra = result.rows[0];
+  if (!compra) {
+    throw new AppError(404, "COMPRA_NO_ENCONTRADA", "Compra no encontrada");
+  }
+
+  if (authUser.role === "ORGANIZADOR" && compra.creador_id !== authUser.id) {
+    throw new AppError(
+      403,
+      "SIN_PERMISOS",
+      "No tiene permisos para gestionar el check-in de esta compra",
+    );
+  }
+
+  if (compra.estado !== "PAGADO") {
+    throw new AppError(
+      409,
+      "COMPRA_NO_HABILITADA",
+      "Solo las compras pagadas pueden marcarse en el check-in",
+    );
+  }
+
+  if (checkedIn) {
+    await query(
+      `UPDATE entradas
+       SET estado = 'USADA',
+           usada_at = COALESCE(usada_at, NOW())
+       WHERE compra_id = $1`,
+      [compraId],
+    );
+  } else {
+    await query(
+      `UPDATE entradas
+       SET estado = 'DISPONIBLE',
+           usada_at = NULL
+       WHERE compra_id = $1`,
+      [compraId],
+    );
+  }
+
+  const countResult = await query<{ count: string }>(
+    `SELECT COUNT(*)::text AS count
+     FROM entradas
+     WHERE compra_id = $1
+       AND estado = 'USADA'`,
+    [compraId],
+  );
+
+  return {
+    compraId,
+    entradasUsadas: Number.parseInt(countResult.rows[0]?.count || "0", 10),
   };
 }

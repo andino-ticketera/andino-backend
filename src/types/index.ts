@@ -29,6 +29,7 @@ export interface Evento {
   instagram: string | null;
   tiktok: string | null;
   estado: EstadoEvento;
+  visible_en_app: boolean;
   creador_id: string;
   creador_rol: CreadorRol;
   creado_por_admin_id: string | null;
@@ -71,6 +72,7 @@ export interface UpdateEventoDTO {
   medios_pago?: MedioPago[];
   instagram?: string;
   tiktok?: string;
+  visible_en_app?: boolean;
   remove_flyer?: boolean;
 }
 
@@ -169,6 +171,15 @@ export interface EntradaResumen {
 
 export interface CompraDetalle extends CompraResumen {
   entradas: EntradaResumen[];
+}
+
+export interface CompraGestionResumen extends CompraResumen {
+  comprador_nombre: string;
+  comprador_apellido: string;
+  comprador_email: string;
+  comprador_documento: string;
+  comprador_tipo_documento: string;
+  entradas_usadas: number;
 }
 
 export interface PerfilComprador {

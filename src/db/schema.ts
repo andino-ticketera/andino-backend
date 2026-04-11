@@ -64,6 +64,7 @@ CREATE TABLE IF NOT EXISTS eventos (
   instagram       TEXT,
   tiktok          TEXT,
   estado          TEXT NOT NULL DEFAULT 'ACTIVO' CHECK (estado IN ('ACTIVO', 'AGOTADO', 'CANCELADO')),
+  visible_en_app  BOOLEAN NOT NULL DEFAULT TRUE,
   creador_id      UUID NOT NULL,
   creador_rol     TEXT NOT NULL CHECK (creador_rol IN ('ORGANIZADOR', 'ADMIN')),
   idempotency_key VARCHAR(128),
@@ -79,10 +80,14 @@ CREATE UNIQUE INDEX IF NOT EXISTS ux_eventos_creador_idempotency
 CREATE INDEX IF NOT EXISTS ix_eventos_estado_fecha
   ON eventos (estado, fecha_evento ASC);
 
+CREATE INDEX IF NOT EXISTS ix_eventos_visible_estado_fecha
+  ON eventos (visible_en_app, estado, fecha_evento ASC);
+
 -- Auditoria: cuando un ADMIN crea un evento en nombre de un organizador,
 -- guardamos el id del admin que cargo la publicacion. NULL cuando el creador
 -- es el propio dueño del evento.
 ALTER TABLE eventos
+  ADD COLUMN IF NOT EXISTS visible_en_app BOOLEAN NOT NULL DEFAULT TRUE,
   ADD COLUMN IF NOT EXISTS creado_por_admin_id UUID NULL;
 
 CREATE INDEX IF NOT EXISTS ix_eventos_creado_por_admin

@@ -25,7 +25,8 @@ async function ensureEventosExistAndAreVisible(
     `SELECT id
      FROM eventos
      WHERE id = ANY($1::uuid[])
-       AND estado IN ('ACTIVO', 'AGOTADO')`,
+       AND estado IN ('ACTIVO', 'AGOTADO')
+       AND visible_en_app = TRUE`,
     [eventIds],
   );
 
@@ -53,6 +54,7 @@ export async function listCarruselEventos(): Promise<CarruselEvento[]> {
      FROM carrusel_eventos c
      INNER JOIN eventos e ON e.id = c.evento_id
      WHERE e.estado IN ('ACTIVO', 'AGOTADO')
+       AND e.visible_en_app = TRUE
      ORDER BY c.created_at ASC`,
   );
 

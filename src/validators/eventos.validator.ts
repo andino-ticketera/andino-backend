@@ -304,6 +304,7 @@ export function validateUpdateEvento(
     "medios_pago",
     "instagram",
     "tiktok",
+    "visible_en_app",
     "remove_flyer",
   ];
 
@@ -484,6 +485,16 @@ export function validateUpdateEvento(
       errors.push({
         campo: "remove_flyer",
         mensaje: "remove_flyer debe ser true o false",
+      });
+    }
+  }
+
+  if (body.visible_en_app !== undefined) {
+    const visibleInApp = String(body.visible_en_app).trim().toLowerCase();
+    if (visibleInApp !== "true" && visibleInApp !== "false") {
+      errors.push({
+        campo: "visible_en_app",
+        mensaje: "visible_en_app debe ser true o false",
       });
     }
   }

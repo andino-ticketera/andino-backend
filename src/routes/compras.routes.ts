@@ -38,6 +38,95 @@ router.get(
 );
 
 router.get(
+  "/admin",
+  requireAuth,
+  requireRole(["ADMIN"]),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const limit = req.query.limit
+        ? Number.parseInt(String(req.query.limit), 10)
+        : undefined;
+      const offset = req.query.offset
+        ? Number.parseInt(String(req.query.offset), 10)
+        : undefined;
+
+      const data = await comprasService.listComprasForAdmin({
+        limit,
+        offset,
+      });
+
+      res.json({ data });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+router.get(
+  "/organizador",
+  requireAuth,
+  requireRole(["ORGANIZADOR", "ADMIN"]),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const limit = req.query.limit
+        ? Number.parseInt(String(req.query.limit), 10)
+        : undefined;
+      const offset = req.query.offset
+        ? Number.parseInt(String(req.query.offset), 10)
+        : undefined;
+
+      const data = await comprasService.listComprasByOrganizer(req.user!.id, {
+        limit,
+        offset,
+      });
+
+      res.json({ data });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+router.patch(
+  "/organizador/:id/checkin",
+  requireAuth,
+  requireRole(["ORGANIZADOR", "ADMIN"]),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const compraId = String(req.params.id || "").trim();
+      if (!isValidUUID(compraId)) {
+        next(new AppError(400, "ID_INVALIDO", "ID de compra invalido"));
+        return;
+      }
+
+      const checkedInRaw = String(req.body?.checkedIn ?? "")
+        .trim()
+        .toLowerCase();
+      if (checkedInRaw !== "true" && checkedInRaw !== "false") {
+        next(
+          new AppError(
+            400,
+            "VALIDATION_ERROR",
+            "checkedIn debe ser true o false",
+          ),
+        );
+        return;
+      }
+
+      const data = await comprasService.setCompraCheckInStatus(
+        req.user!,
+        compraId,
+        checkedInRaw === "true",
+      );
+
+      res.json({ data });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+router.get(
   "/mias/perfil-comprador",
   requireAuth,
   requireRole(["USUARIO", "ORGANIZADOR", "ADMIN"]),
