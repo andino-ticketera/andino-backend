@@ -27,4 +27,16 @@ describe("categorias.validator", () => {
     expect(validateUpdateCategoria({ nombre: "" })).toHaveLength(1);
     expect(validateUpdateCategoria({ nombre: "Teatro" })).toEqual([]);
   });
+
+  it("validateUpdateCategoria permite actualizar solo la visibilidad", () => {
+    expect(validateUpdateCategoria({ visible_en_app: false })).toEqual([]);
+    expect(validateUpdateCategoria({ visible_en_app: "true" })).toEqual([]);
+  });
+
+  it("validateUpdateCategoria exige al menos un cambio valido", () => {
+    expect(validateUpdateCategoria({})).toHaveLength(1);
+    expect(
+      validateUpdateCategoria({ visible_en_app: "tal vez" }),
+    ).toHaveLength(1);
+  });
 });

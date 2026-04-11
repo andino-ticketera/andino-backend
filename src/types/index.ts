@@ -125,6 +125,7 @@ export interface ListEventosQuery {
 export interface Categoria {
   id: string;
   nombre: string;
+  visible_en_app: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -134,7 +135,8 @@ export interface CreateCategoriaDTO {
 }
 
 export interface UpdateCategoriaDTO {
-  nombre: string;
+  nombre?: string;
+  visible_en_app?: boolean;
 }
 
 export interface CarruselEvento {

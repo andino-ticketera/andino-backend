@@ -148,6 +148,7 @@ router.post(
 
       const categoriaValida = await categoriasService.existsCategoriaByNombre(
         String(req.body.categoria || "").trim(),
+        { visibleOnly: true },
       );
       if (!categoriaValida) {
         next(
@@ -337,6 +338,7 @@ router.put(
       if (req.body.categoria !== undefined) {
         const categoriaValida = await categoriasService.existsCategoriaByNombre(
           String(req.body.categoria || "").trim(),
+          { visibleOnly: true },
         );
         if (!categoriaValida) {
           next(

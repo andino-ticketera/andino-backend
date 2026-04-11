@@ -24,6 +24,14 @@ function isVisibleInAppColumnMissing(error: unknown): boolean {
   );
 }
 
+function isCategoriaVisibleColumnMissing(error: unknown): boolean {
+  const dbError = error as { code?: string; message?: string };
+  return (
+    dbError?.code === "42703" &&
+    String(dbError.message || "").includes("categorias.visible_en_app")
+  );
+}
+
 async function ensureEventosExistAndAreVisible(
   eventIds: string[],
 ): Promise<void> {
@@ -32,15 +40,20 @@ async function ensureEventosExistAndAreVisible(
   let result;
   try {
     result = await query<ExistingEventoRow>(
-      `SELECT id
+      `SELECT eventos.id
        FROM eventos
-       WHERE id = ANY($1::uuid[])
-         AND estado IN ('ACTIVO', 'AGOTADO')
-         AND visible_en_app = TRUE`,
+       INNER JOIN categorias ON categorias.nombre = eventos.categoria
+       WHERE eventos.id = ANY($1::uuid[])
+         AND eventos.estado IN ('ACTIVO', 'AGOTADO')
+         AND eventos.visible_en_app = TRUE
+         AND categorias.visible_en_app = TRUE`,
       [eventIds],
     );
   } catch (error) {
-    if (!isVisibleInAppColumnMissing(error)) {
+    if (
+      !isVisibleInAppColumnMissing(error) &&
+      !isCategoriaVisibleColumnMissing(error)
+    ) {
       throw error;
     }
 
@@ -78,12 +91,17 @@ export async function listCarruselEventos(): Promise<CarruselEvento[]> {
       `SELECT c.evento_id
        FROM carrusel_eventos c
        INNER JOIN eventos e ON e.id = c.evento_id
+       INNER JOIN categorias ON categorias.nombre = e.categoria
        WHERE e.estado IN ('ACTIVO', 'AGOTADO')
          AND e.visible_en_app = TRUE
+         AND categorias.visible_en_app = TRUE
        ORDER BY c.created_at ASC`,
     );
   } catch (error) {
-    if (!isVisibleInAppColumnMissing(error)) {
+    if (
+      !isVisibleInAppColumnMissing(error) &&
+      !isCategoriaVisibleColumnMissing(error)
+    ) {
       throw error;
     }
 

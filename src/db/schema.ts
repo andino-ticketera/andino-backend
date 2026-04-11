@@ -22,10 +22,14 @@ DROP TABLE IF EXISTS usuarios;
 CREATE TABLE IF NOT EXISTS categorias (
   id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   nombre      VARCHAR(50) NOT NULL,
+  visible_en_app BOOLEAN NOT NULL DEFAULT TRUE,
   created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   CONSTRAINT uq_categorias_nombre UNIQUE (nombre)
 );
+
+ALTER TABLE categorias
+  ADD COLUMN IF NOT EXISTS visible_en_app BOOLEAN NOT NULL DEFAULT TRUE;
 
 CREATE UNIQUE INDEX IF NOT EXISTS ux_categorias_nombre_lower
   ON categorias ((LOWER(TRIM(nombre))));

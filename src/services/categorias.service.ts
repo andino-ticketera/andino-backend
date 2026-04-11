@@ -9,6 +9,7 @@ import type {
 interface CategoriaRow {
   id: string;
   nombre: string;
+  visible_en_app: boolean;
   created_at: Date;
   updated_at: Date;
 }
@@ -17,6 +18,7 @@ function rowToCategoria(row: CategoriaRow): Categoria {
   return {
     id: row.id,
     nombre: row.nombre,
+    visible_en_app: row.visible_en_app !== false,
     created_at: row.created_at.toISOString(),
     updated_at: row.updated_at.toISOString(),
   };
@@ -51,9 +53,17 @@ function handleCategoriaDbError(err: unknown): never {
   throw err;
 }
 
-export async function listCategorias(): Promise<Categoria[]> {
+function parseBooleanLike(value: unknown): boolean {
+  if (typeof value === "boolean") return value;
+  return String(value).trim().toLowerCase() === "true";
+}
+
+export async function listCategorias(options?: {
+  includeHidden?: boolean;
+}): Promise<Categoria[]> {
+  const whereClause = options?.includeHidden ? "" : "WHERE visible_en_app = TRUE";
   const result = await query<CategoriaRow>(
-    `SELECT * FROM categorias ORDER BY LOWER(nombre) ASC`,
+    `SELECT * FROM categorias ${whereClause} ORDER BY LOWER(nombre) ASC`,
   );
 
   return result.rows.map(rowToCategoria);
@@ -78,10 +88,14 @@ export async function getCategoriaById(id: string): Promise<Categoria> {
 
 export async function existsCategoriaByNombre(
   nombre: string,
+  options?: { visibleOnly?: boolean },
 ): Promise<boolean> {
+  const visibilityClause = options?.visibleOnly ? "AND visible_en_app = TRUE" : "";
   const result = await query<{ exists: boolean }>(
     `SELECT EXISTS(
-      SELECT 1 FROM categorias WHERE LOWER(nombre) = LOWER($1)
+      SELECT 1 FROM categorias
+      WHERE LOWER(nombre) = LOWER($1)
+      ${visibilityClause}
     ) as exists`,
     [nombre],
   );
@@ -124,17 +138,42 @@ export async function updateCategoria(
   }
 
   const current = existing.rows[0];
-  if (current.nombre === dto.nombre) {
+  const nextNombre =
+    dto.nombre !== undefined ? dto.nombre : current.nombre;
+  const nextVisible =
+    dto.visible_en_app !== undefined
+      ? parseBooleanLike(dto.visible_en_app)
+      : current.visible_en_app;
+
+  if (current.nombre === nextNombre && current.visible_en_app === nextVisible) {
     return rowToCategoria(current);
   }
+
+  const setClauses: string[] = [];
+  const params: unknown[] = [];
+  let paramIndex = 1;
+
+  if (dto.nombre !== undefined) {
+    setClauses.push(`nombre = $${paramIndex}`);
+    params.push(nextNombre);
+    paramIndex++;
+  }
+
+  if (dto.visible_en_app !== undefined) {
+    setClauses.push(`visible_en_app = $${paramIndex}`);
+    params.push(nextVisible);
+    paramIndex++;
+  }
+
+  params.push(id);
 
   try {
     const result = await query<CategoriaRow>(
       `UPDATE categorias
-       SET nombre = $1
-       WHERE id = $2
+       SET ${setClauses.join(", ")}
+       WHERE id = $${paramIndex}
        RETURNING *`,
-      [dto.nombre, id],
+      params,
     );
 
     return rowToCategoria(result.rows[0]);

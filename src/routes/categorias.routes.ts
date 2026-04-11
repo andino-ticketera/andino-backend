@@ -32,6 +32,21 @@ router.get("/", async (_req: Request, res: Response, next: NextFunction) => {
   }
 });
 
+// GET /api/categorias/admin/todas
+router.get(
+  "/admin/todas",
+  requireAuth,
+  requireRole(["ADMIN"]),
+  async (_req: Request, res: Response, next: NextFunction) => {
+    try {
+      const data = await categoriasService.listCategorias({ includeHidden: true });
+      res.json({ data });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
 // GET /api/categorias/:id
 router.get("/:id", async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -92,7 +107,11 @@ router.put(
       }
 
       const categoria = await categoriasService.updateCategoria(categoriaId, {
-        nombre: normalizeCategoriaNombre(req.body.nombre),
+        nombre:
+          req.body.nombre !== undefined
+            ? normalizeCategoriaNombre(req.body.nombre)
+            : undefined,
+        visible_en_app: req.body.visible_en_app,
       });
 
       res.json(categoria);

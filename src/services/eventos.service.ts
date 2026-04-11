@@ -104,6 +104,14 @@ function isVisibleInAppColumnMissing(error: unknown): boolean {
   );
 }
 
+function isCategoriaVisibleColumnMissing(error: unknown): boolean {
+  const dbError = error as { code?: string; message?: string };
+  return (
+    dbError?.code === "42703" &&
+    String(dbError.message || "").includes("categorias.visible_en_app")
+  );
+}
+
 /**
  * Resuelve a quién le queda asignado el evento. Solo un ADMIN puede delegar
  * la titularidad a un organizador existente pasando `organizador_id`. Si el
@@ -293,58 +301,72 @@ export async function listEventos(
   const estadosPermitidos = estados.filter(
     (e) => e === "ACTIVO" || e === "AGOTADO",
   );
-  conditions.push(`estado = ANY($${paramIndex})`);
+  conditions.push(`eventos.estado = ANY($${paramIndex})`);
   params.push(
     estadosPermitidos.length > 0 ? estadosPermitidos : ["__ESTADO_SIN_MATCH__"],
   );
   paramIndex++;
 
   if (filters.categoria) {
-    conditions.push(`categoria = $${paramIndex}`);
+    conditions.push(`eventos.categoria = $${paramIndex}`);
     params.push(filters.categoria);
     paramIndex++;
   }
 
   if (filters.provincia) {
-    conditions.push(`provincia = $${paramIndex}`);
+    conditions.push(`eventos.provincia = $${paramIndex}`);
     params.push(filters.provincia);
     paramIndex++;
   }
 
   if (filters.localidad) {
-    conditions.push(`localidad = $${paramIndex}`);
+    conditions.push(`eventos.localidad = $${paramIndex}`);
     params.push(filters.localidad);
     paramIndex++;
   }
 
   if (filters.q) {
     conditions.push(
-      `(titulo ILIKE $${paramIndex} OR descripcion ILIKE $${paramIndex} OR locacion ILIKE $${paramIndex})`,
+      `(eventos.titulo ILIKE $${paramIndex} OR eventos.descripcion ILIKE $${paramIndex} OR eventos.locacion ILIKE $${paramIndex})`,
     );
     params.push(`%${filters.q}%`);
     paramIndex++;
   }
 
-  const whereClause =
-    conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
-  const whereClauseWithVisibility = whereClause
-    ? `WHERE visible_en_app = TRUE AND ${conditions.join(" AND ")}`
-    : `WHERE visible_en_app = TRUE`;
+  const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+  const publicVisibilityConditions = [
+    "eventos.visible_en_app = TRUE",
+    "categorias.visible_en_app = TRUE",
+    ...conditions,
+  ];
+  const whereClauseWithVisibility = `WHERE ${publicVisibilityConditions.join(" AND ")}`;
 
   // Consulta unica: datos + total con window function COUNT(*) OVER()
   let dataResult;
   try {
     dataResult = await query<EventoRow & { _total: string }>(
-      `SELECT *, COUNT(*) OVER() AS _total FROM eventos ${whereClauseWithVisibility} ORDER BY fecha_evento ASC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`,
+      `SELECT eventos.*, COUNT(*) OVER() AS _total
+       FROM eventos
+       INNER JOIN categorias ON categorias.nombre = eventos.categoria
+       ${whereClauseWithVisibility}
+       ORDER BY eventos.fecha_evento ASC
+       LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`,
       [...params, limit, offset],
     );
   } catch (error) {
-    if (!isVisibleInAppColumnMissing(error)) {
+    if (
+      !isVisibleInAppColumnMissing(error) &&
+      !isCategoriaVisibleColumnMissing(error)
+    ) {
       throw error;
     }
 
     dataResult = await query<EventoRow & { _total: string }>(
-      `SELECT *, COUNT(*) OVER() AS _total FROM eventos ${whereClause} ORDER BY fecha_evento ASC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`,
+      `SELECT *, COUNT(*) OVER() AS _total
+       FROM eventos
+       ${whereClause}
+       ORDER BY fecha_evento ASC
+       LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`,
       [...params, limit, offset],
     );
   }
@@ -367,14 +389,20 @@ export async function getEventoById(id: string): Promise<Evento> {
   let result;
   try {
     result = await query<EventoRow>(
-      `SELECT * FROM eventos
-       WHERE id = $1
-         AND estado != 'CANCELADO'
-         AND visible_en_app = TRUE`,
+      `SELECT eventos.*
+       FROM eventos
+       INNER JOIN categorias ON categorias.nombre = eventos.categoria
+       WHERE eventos.id = $1
+         AND eventos.estado != 'CANCELADO'
+         AND eventos.visible_en_app = TRUE
+         AND categorias.visible_en_app = TRUE`,
       [id],
     );
   } catch (error) {
-    if (!isVisibleInAppColumnMissing(error)) {
+    if (
+      !isVisibleInAppColumnMissing(error) &&
+      !isCategoriaVisibleColumnMissing(error)
+    ) {
       throw error;
     }
 

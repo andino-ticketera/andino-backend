@@ -27,6 +27,13 @@ function validateNombre(nombre: string): ValidationDetail[] {
   return errors;
 }
 
+function isBooleanLike(value: unknown): boolean {
+  if (typeof value === "boolean") return true;
+
+  const normalized = String(value ?? "").trim().toLowerCase();
+  return normalized === "true" || normalized === "false";
+}
+
 export function validateCreateCategoria(
   body: Record<string, unknown>,
 ): ValidationDetail[] {
@@ -37,5 +44,28 @@ export function validateCreateCategoria(
 export function validateUpdateCategoria(
   body: Record<string, unknown>,
 ): ValidationDetail[] {
-  return validateCreateCategoria(body);
+  const errors: ValidationDetail[] = [];
+  const hasNombre = body.nombre !== undefined;
+  const hasVisible = body.visible_en_app !== undefined;
+
+  if (!hasNombre && !hasVisible) {
+    errors.push({
+      campo: "body",
+      mensaje: "Debes enviar un nombre o la visibilidad de la categoria",
+    });
+    return errors;
+  }
+
+  if (hasNombre) {
+    errors.push(...validateNombre(normalizeCategoriaNombre(body.nombre)));
+  }
+
+  if (hasVisible && !isBooleanLike(body.visible_en_app)) {
+    errors.push({
+      campo: "visible_en_app",
+      mensaje: "visible_en_app debe ser true o false",
+    });
+  }
+
+  return errors;
 }
