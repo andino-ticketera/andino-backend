@@ -214,6 +214,8 @@ router.post(
 // ── GET /api/eventos ──────────────────────────────────────────────
 router.get("/", async (req: Request, res: Response, next: NextFunction) => {
   try {
+    // Sweep perezoso: oculta eventos finalizados antes de listar al publico.
+    await eventosService.hideFinishedEvents();
     const result = await eventosService.listEventos({
       estado: req.query.estado as string | undefined,
       categoria: req.query.categoria as string | undefined,
@@ -251,10 +253,15 @@ router.get(
   "/admin/todos",
   requireAuth,
   requireRole(["ADMIN"]),
-  async (_req: Request, res: Response, next: NextFunction) => {
+  async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const eventos = await eventosService.listEventosForAdmin();
-      res.json({ data: eventos });
+      // Sweep perezoso: oculta eventos finalizados antes de listar.
+      await eventosService.hideFinishedEvents();
+      const filter = eventosService.parseFinalizadosFilter(
+        req.query.finalizados,
+      );
+      const eventos = await eventosService.listEventosForAdmin(filter);
+      res.json({ data: eventos, finalizados: filter });
     } catch (err) {
       next(err);
     }

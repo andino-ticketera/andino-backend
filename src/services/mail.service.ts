@@ -211,31 +211,36 @@ function buildEmailLayout(input: {
   bodyHtml: string;
   footerHtml?: string;
 }): string {
+  // Nota: forzamos light mode con color-scheme/supported-color-schemes para que
+  // Gmail/Apple Mail/Outlook no aplique auto-dark invert sobre el layout, que
+  // antes rompia el header con gradiente oscuro y lo dejaba ilegible.
   return `
     <!doctype html>
     <html lang="es">
       <head>
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <meta name="color-scheme" content="light only" />
+        <meta name="supported-color-schemes" content="light" />
         <title>${escapeHtml(input.title)}</title>
       </head>
-      <body style="margin:0;padding:0;background:#12091d;font-family:Arial,Helvetica,sans-serif;color:#f6f4fb;">
-        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#12091d;padding:24px 12px;">
+      <body style="margin:0;padding:0;background:#f3f4f6;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;color:#111827;-webkit-font-smoothing:antialiased;">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f3f4f6;padding:24px 12px;">
           <tr>
             <td align="center">
-              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:680px;background:#231135;border:1px solid #4a2d6b;border-radius:20px;overflow:hidden;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;background:#ffffff;border:1px solid #e5e7eb;border-radius:16px;overflow:hidden;box-shadow:0 1px 3px rgba(17,24,39,0.06);">
                 <tr>
-                  <td style="padding:28px 28px 18px;background:radial-gradient(circle at top left,#244d3a 0%,#231135 45%);">
-                    <div style="font-size:12px;letter-spacing:1.6px;text-transform:uppercase;font-weight:700;color:#8ce7ba;">${escapeHtml(input.pretitle)}</div>
-                    <h1 style="margin:12px 0 8px;font-size:30px;line-height:1.1;color:#ffffff;">${escapeHtml(input.title)}</h1>
-                    <p style="margin:0;font-size:15px;line-height:1.7;color:#d2c5e6;">${escapeHtml(input.intro)}</p>
+                  <td style="padding:28px 28px 22px;background:#ffffff;border-bottom:1px solid #e5e7eb;">
+                    <div style="font-size:12px;letter-spacing:1.4px;text-transform:uppercase;font-weight:800;color:#059669;">${escapeHtml(input.pretitle)}</div>
+                    <h1 style="margin:10px 0 8px;font-size:26px;line-height:1.2;color:#111827;font-weight:800;">${escapeHtml(input.title)}</h1>
+                    <p style="margin:0;font-size:15px;line-height:1.6;color:#4b5563;">${escapeHtml(input.intro)}</p>
                   </td>
                 </tr>
                 <tr>
-                  <td style="padding:28px;">${input.bodyHtml}</td>
+                  <td style="padding:24px;background:#ffffff;">${input.bodyHtml}</td>
                 </tr>
                 <tr>
-                  <td style="padding:0 28px 28px;font-size:13px;line-height:1.7;color:#a794c6;">
+                  <td style="padding:0 24px 24px;background:#ffffff;font-size:12px;line-height:1.6;color:#6b7280;">
                     ${input.footerHtml || "Andino Tickets"}
                   </td>
                 </tr>
@@ -427,9 +432,18 @@ export async function sendPurchaseConfirmationEmail(
       .trim() || "Comprador";
 
   const baseFrontendUrl = env.frontendUrl.replace(/\/$/, "");
+  // URL del boton "Ver detalle de compra": mandamos al usuario logueado a su
+  // panel privado y a los guest al status publico.
   const compraUrl = compra.user_id
     ? `${baseFrontendUrl}/usuario/compras/${compra.id}`
     : `${baseFrontendUrl}/checkout/estado?compra=${encodeURIComponent(compra.id)}`;
+
+  // URL que codificamos DENTRO del QR: siempre la pagina publica de status,
+  // asi cuando alguien escanea el QR con el celular se abre directamente la
+  // confirmacion de la compra sin requerir sesion. El check-in del
+  // organizador sigue funcionando porque usa compraId (no el contenido del
+  // QR) via PATCH /api/compras/organizador/:id/checkin.
+  const qrTargetUrl = `${baseFrontendUrl}/checkout/estado?compra=${encodeURIComponent(compra.id)}`;
 
   const ticketAssets = await Promise.all(
     entradas.map(async (entrada) => ({
@@ -442,37 +456,35 @@ export async function sendPurchaseConfirmationEmail(
         direccion: compra.direccion,
         organizador,
         compradorNombre,
-        qrData: entrada.id,
+        qrData: qrTargetUrl,
       }),
     })),
   );
 
   const entradasHtml = ticketAssets
     .map(({ entrada, assets }) => {
+      // QR en fondo blanco con borde suave para que sea escaneable en dark mode
+      // del cliente de correo si por alguna razon llega a invertirse.
       const qrPreview = assets.qrImageUrl
-        ? `<div style="margin-top:14px;"><img src="${escapeHtml(assets.qrImageUrl)}" alt="QR entrada ${entrada.numero_entrada}" width="160" height="160" style="display:block;border:1px solid #4a2d6b;border-radius:14px;background:#fff;padding:8px;" /></div>`
+        ? `<div style="margin-top:16px;text-align:center;"><img src="${escapeHtml(assets.qrImageUrl)}" alt="QR entrada ${entrada.numero_entrada}" width="180" height="180" style="display:block;margin:0 auto;border:1px solid #e5e7eb;border-radius:12px;background:#ffffff;padding:10px;max-width:100%;height:auto;" /></div>`
         : "";
-      const links = [
-        assets.qrPdfUrl
-          ? `<a href="${escapeHtml(assets.qrPdfUrl)}" style="display:inline-block;margin-right:10px;margin-top:12px;padding:10px 14px;border-radius:999px;background:#5de8a0;color:#04110d;text-decoration:none;font-weight:700;">Descargar PDF</a>`
-          : "",
-        assets.qrImageUrl
-          ? `<a href="${escapeHtml(assets.qrImageUrl)}" style="display:inline-block;margin-top:12px;padding:10px 14px;border-radius:999px;border:1px solid #5de8a0;color:#5de8a0;text-decoration:none;font-weight:700;">Abrir QR</a>`
-          : "",
-      ]
-        .filter(Boolean)
-        .join("");
+      // Fallback "Abrir QR": util cuando el cliente de correo bloquea imagenes
+      // inline (Outlook, Apple Mail con remitente no confiable, etc.) y el
+      // usuario no puede ver/escanear el QR embebido. Sin este link no habria
+      // forma de recuperarlo desde el propio email.
+      const openQrLink = assets.qrImageUrl
+        ? `<div style="text-align:center;"><a href="${escapeHtml(assets.qrImageUrl)}" style="display:inline-block;margin-top:14px;padding:11px 18px;border-radius:999px;background:#ffffff;border:1px solid #10b981;color:#047857;text-decoration:none;font-weight:700;font-size:14px;">Abrir QR</a></div>`
+        : "";
 
       return `
         <tr>
-          <td style="padding:16px;border-radius:14px;background:#2b1840;border:1px solid #4a2d6b;">
-            <div style="font-size:12px;text-transform:uppercase;letter-spacing:1px;color:#8ce7ba;font-weight:700;">Entrada ${entrada.numero_entrada}</div>
-            <div style="margin-top:10px;font-size:14px;line-height:1.8;color:#f6f4fb;">
-              ID: ${escapeHtml(entrada.id)}<br />
-              Evento: ${escapeHtml(compra.evento_titulo)}
+          <td style="padding:20px;border-radius:14px;background:#f9fafb;border:1px solid #e5e7eb;">
+            <div style="font-size:11px;text-transform:uppercase;letter-spacing:1.2px;color:#059669;font-weight:800;">Entrada ${entrada.numero_entrada}</div>
+            <div style="margin-top:8px;font-size:15px;line-height:1.6;color:#111827;font-weight:600;">
+              ${escapeHtml(compra.evento_titulo)}
             </div>
             ${qrPreview}
-            ${links}
+            ${openQrLink}
           </td>
         </tr>
       `;
@@ -484,31 +496,29 @@ export async function sendPurchaseConfirmationEmail(
     title: `Tus entradas para ${compra.evento_titulo}`,
     intro: `Hola ${escapeHtml(compradorNombre)}, tu pago fue acreditado y ya emitimos ${entradas.length === 1 ? "tu entrada" : "tus entradas"}.`,
     bodyHtml: `
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:separate;border-spacing:0 12px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:separate;border-spacing:0 14px;">
         <tr>
-          <td style="padding:16px;border-radius:14px;background:#2b1840;border:1px solid #4a2d6b;">
-            <div style="font-size:12px;text-transform:uppercase;letter-spacing:1px;color:#8ce7ba;font-weight:700;">Resumen de compra</div>
-            <div style="margin-top:10px;font-size:15px;line-height:1.8;color:#f6f4fb;">
-              <strong>Compra:</strong> ${escapeHtml(compra.id)}<br />
-              <strong>Evento:</strong> ${escapeHtml(compra.evento_titulo)}<br />
-              <strong>Fecha:</strong> ${escapeHtml(formatDate(compra.fecha_evento))}<br />
-              <strong>Lugar:</strong> ${escapeHtml(compra.locacion)}<br />
-              <strong>Direccion:</strong> ${escapeHtml(compra.direccion)}<br />
-              <strong>Total:</strong> ${escapeHtml(formatMoney(Number.parseFloat(compra.precio_total)))}
+          <td style="padding:20px;border-radius:14px;background:#f9fafb;border:1px solid #e5e7eb;">
+            <div style="font-size:11px;text-transform:uppercase;letter-spacing:1.2px;color:#059669;font-weight:800;">Resumen de compra</div>
+            <div style="margin-top:12px;font-size:15px;line-height:1.85;color:#111827;">
+              <strong style="color:#374151;">Evento:</strong> ${escapeHtml(compra.evento_titulo)}<br />
+              <strong style="color:#374151;">Fecha:</strong> ${escapeHtml(formatDate(compra.fecha_evento))}<br />
+              <strong style="color:#374151;">Lugar:</strong> ${escapeHtml(compra.locacion)}<br />
+              <strong style="color:#374151;">Direccion:</strong> ${escapeHtml(compra.direccion)}<br />
+              <strong style="color:#374151;">Total:</strong> ${escapeHtml(formatMoney(Number.parseFloat(compra.precio_total)))}
             </div>
-            <a href="${escapeHtml(compraUrl)}" style="display:inline-block;margin-top:16px;padding:12px 18px;border-radius:999px;background:#5de8a0;color:#04110d;text-decoration:none;font-weight:800;">Ver detalle de compra</a>
+            <a href="${escapeHtml(compraUrl)}" style="display:inline-block;margin-top:18px;padding:12px 20px;border-radius:999px;background:#10b981;color:#ffffff;text-decoration:none;font-weight:800;font-size:14px;">Ver detalle de compra</a>
           </td>
         </tr>
         ${entradasHtml}
       </table>
     `,
     footerHtml:
-      "Si no ves el QR embebido en tu correo, podes abrirlo o descargar el PDF desde los botones de cada entrada.",
+      "Si no ves el QR embebido en tu correo, podes abrirlo o descargar el PDF desde los botones de cada entrada.<br />Andino Tickets",
   });
 
   const text = [
     `Compra confirmada - ${compra.evento_titulo}`,
-    `Compra: ${compra.id}`,
     `Evento: ${compra.evento_titulo}`,
     `Fecha: ${formatDate(compra.fecha_evento)}`,
     `Lugar: ${compra.locacion}`,
@@ -517,7 +527,7 @@ export async function sendPurchaseConfirmationEmail(
     `Detalle: ${compraUrl}`,
     "",
     ...ticketAssets.flatMap(({ entrada, assets }) => [
-      `Entrada ${entrada.numero_entrada}: ${entrada.id}`,
+      `Entrada ${entrada.numero_entrada}`,
       assets.qrPdfUrl ? `PDF: ${assets.qrPdfUrl}` : "",
       assets.qrImageUrl ? `QR: ${assets.qrImageUrl}` : "",
       "",

@@ -1,3 +1,4 @@
+import { env } from "../config/env.js";
 import { query } from "../db/pool.js";
 import { AppError } from "../utils/errors.js";
 import type {
@@ -426,6 +427,12 @@ export async function getEntradaDetalleByUser(
   }
 
   const organizerName = organizer?.nombreCompleto || "Organizador";
+  // URL publica que codificamos dentro del QR. Cuando alguien escanea el QR
+  // con el celular se abre directamente la pagina de confirmacion de la
+  // compra sin requerir sesion. El check-in del organizador sigue usando
+  // el compraId via PATCH /api/compras/organizador/:id/checkin, asi que no
+  // depende del contenido del QR.
+  const qrTargetUrl = `${env.frontendUrl.replace(/\/$/, "")}/checkout/estado?compra=${encodeURIComponent(row.compra_id)}`;
   const ticketAssets = await buildTicketAssets({
     entradaId: row.id,
     eventoTitulo: row.evento_titulo,
@@ -434,7 +441,7 @@ export async function getEntradaDetalleByUser(
     direccion: row.direccion,
     organizador: organizerName,
     compradorNombre: buyer.nombreCompleto,
-    qrData: row.id,
+    qrData: qrTargetUrl,
   });
 
   return {
@@ -442,7 +449,7 @@ export async function getEntradaDetalleByUser(
     compra_id: row.compra_id,
     numero_entrada: row.numero_entrada,
     qr_token: row.qr_token,
-    qr_data: row.id,
+    qr_data: qrTargetUrl,
     qr_image_data_url: ticketAssets.qrImageDataUrl,
     qr_image_url: ticketAssets.qrImageUrl,
     qr_pdf_url: ticketAssets.qrPdfUrl,

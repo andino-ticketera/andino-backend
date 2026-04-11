@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { env } from "../../src/config/env.js";
 import { AppError } from "../../src/utils/errors.js";
 
 const mocks = vi.hoisted(() => {
@@ -237,9 +238,14 @@ describe("compras.service", () => {
 
     const result = await getEntradaDetalleByUser("user-1", "entrada-1");
 
+    // El QR ahora codifica la URL publica de confirmacion de la compra, no
+    // el entrada_id crudo. Esto permite que al escanear el QR desde un
+    // celular se abra directamente la pagina de status de la compra.
+    const expectedQrUrl = `${env.frontendUrl.replace(/\/$/, "")}/checkout/estado?compra=compra-1`;
+
     expect(result).toMatchObject({
       entrada_id: "entrada-1",
-      qr_data: "entrada-1",
+      qr_data: expectedQrUrl,
       qr_image_data_url: "data:image/png;base64,qr-demo",
       qr_image_url:
         "https://res.cloudinary.com/demo/image/upload/entrada-1-qr.png",
@@ -262,7 +268,7 @@ describe("compras.service", () => {
       direccion: "Calle 123",
       organizador: "Organizador Demo",
       compradorNombre: "Comprador Demo",
-      qrData: "entrada-1",
+      qrData: expectedQrUrl,
     });
   });
 });

@@ -33,6 +33,14 @@ vi.mock("../../src/db/pool.js", () => ({
   },
 }));
 
+// Neutralizamos el sweep de eventos finalizados: los tests de mercadopago
+// encadenan mocks de query() por orden y el sweep agregaria un UPDATE
+// extra que romperia ese orden. El sweep esta cubierto en
+// test/services/eventos.service.test.ts.
+vi.mock("../../src/services/eventos.service.js", () => ({
+  hideFinishedEvents: vi.fn(async () => undefined),
+}));
+
 vi.mock("../../src/lib/logger.js", () => ({
   logger: {
     warn: mocks.warnMock,

@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run:*)",
+      "Read(//c/Users/Gaston/Desktop/andino-export-prod/frontend/app/organizador/**)",
+      "Read(//c/Users/Gaston/Desktop/andino-export-prod/frontend/context/**)"
+    ]
+  }
+}

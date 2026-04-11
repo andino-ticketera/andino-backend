@@ -4,6 +4,7 @@ import { env } from "../config/env.js";
 import { AppError } from "../utils/errors.js";
 import { logger } from "../lib/logger.js";
 import { sendPurchaseConfirmationEmail } from "./mail.service.js";
+import * as eventosService from "./eventos.service.js";
 import type {
   EstadoCompra,
   EstadoMercadoPagoConexion,
@@ -572,6 +573,11 @@ export async function createCheckoutPreference(
   input: MercadoPagoPreferenceInput,
 ): Promise<MercadoPagoPreferenceResult> {
   validateBuyer(input);
+
+  // Sweep perezoso: oculta eventos finalizados antes de crear la preferencia.
+  // Si la fecha del evento ya paso mientras el usuario navegaba, el checkout
+  // se cortara con EVENTO_NO_ENCONTRADO en la validacion de visible_en_app.
+  await eventosService.hideFinishedEvents();
 
   let eventResult;
   try {

@@ -434,11 +434,70 @@ export async function listEventosByCreator(userId: string): Promise<Evento[]> {
   return result.rows.map(rowToEvento);
 }
 
-export async function listEventosForAdmin(): Promise<Evento[]> {
+/**
+ * Sweep idempotente: oculta de la app publica cualquier evento cuya fecha
+ * ya haya pasado (con margen de 1 dia). Es barato porque el filtro
+ * `visible_en_app = TRUE` hace que despues de la primera corrida del dia
+ * no tenga filas que actualizar. Tambien limpia el carrusel para que no
+ * quede ningun evento finalizado en la portada.
+ */
+export async function hideFinishedEvents(): Promise<void> {
+  try {
+    const updated = await query<{ id: string }>(
+      `UPDATE eventos
+       SET visible_en_app = FALSE
+       WHERE fecha_evento < NOW() - INTERVAL '1 day'
+         AND visible_en_app = TRUE
+         AND estado <> 'CANCELADO'
+       RETURNING id`,
+    );
+
+    if (updated.rows.length > 0) {
+      await query(
+        `DELETE FROM carrusel_eventos
+         WHERE evento_id = ANY($1::uuid[])`,
+        [updated.rows.map((row) => row.id)],
+      );
+    }
+  } catch (error) {
+    if (!isVisibleInAppColumnMissing(error)) {
+      throw error;
+    }
+    // DB legacy sin columna visible_en_app: no hay nada que ocultar.
+  }
+}
+
+export type FinalizadosFilter = "excluir" | "incluir" | "solo";
+
+export function parseFinalizadosFilter(
+  value: unknown,
+): FinalizadosFilter {
+  const raw = String(value ?? "")
+    .trim()
+    .toLowerCase();
+  if (raw === "incluir" || raw === "solo") {
+    return raw;
+  }
+  return "excluir";
+}
+
+export async function listEventosForAdmin(
+  filter: FinalizadosFilter = "excluir",
+): Promise<Evento[]> {
+  // Filtro derivado por fecha: un evento se considera "finalizado"
+  // cuando su fecha_evento ya paso hace mas de 1 dia.
+  let fechaClause = "";
+  if (filter === "excluir") {
+    fechaClause = "AND fecha_evento >= NOW() - INTERVAL '1 day'";
+  } else if (filter === "solo") {
+    fechaClause = "AND fecha_evento < NOW() - INTERVAL '1 day'";
+  }
+
   const result = await query<EventoRow>(
     `SELECT * FROM eventos
      WHERE estado != 'CANCELADO'
-     ORDER BY created_at DESC`,
+     ${fechaClause}
+     ORDER BY fecha_evento DESC, created_at DESC`,
   );
 
   return result.rows.map(rowToEvento);
