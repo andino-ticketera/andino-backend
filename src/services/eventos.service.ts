@@ -1,5 +1,6 @@
 import { query } from "../db/pool.js";
 import { AppError } from "../utils/errors.js";
+import { isMissingColumnError } from "../utils/db-compat.js";
 import type {
   Evento,
   CreateEventoDTO,
@@ -151,6 +152,170 @@ function isCategoriaVisibleColumnMissing(error: unknown): boolean {
   );
 }
 
+function isOrganizerNameColumnMissing(error: unknown): boolean {
+  return isMissingColumnError(error, "nombre_organizador");
+}
+
+function buildCreateEventoInsert(
+  dto: CreateEventoDTO,
+  imagenUrl: string,
+  flyerUrl: string | null,
+  ownership: {
+    creadorId: string;
+    creadorRol: CreadorRol;
+    creadoPorAdminId: string | null;
+  },
+  options?: { includeOrganizerName?: boolean },
+): { sql: string; params: unknown[] } {
+  const includeOrganizerName = options?.includeOrganizerName !== false;
+  const columns = [
+    "titulo",
+    "descripcion",
+    "fecha_evento",
+    "locacion",
+    "direccion",
+    "provincia",
+    "localidad",
+    "precio",
+    "cantidad_entradas",
+    "categoria",
+    "imagen_url",
+    "flyer_url",
+    "medios_pago",
+    "instagram",
+    "tiktok",
+  ];
+  const params: unknown[] = [
+    dto.titulo.trim(),
+    dto.descripcion.trim(),
+    dto.fecha_evento,
+    dto.locacion.trim(),
+    dto.direccion.trim(),
+    dto.provincia.trim(),
+    dto.localidad.trim(),
+    dto.precio,
+    dto.cantidad_entradas,
+    dto.categoria.trim(),
+    imagenUrl,
+    flyerUrl,
+    parseMediosPago(dto.medios_pago),
+    dto.instagram?.trim() || null,
+    dto.tiktok?.trim() || null,
+  ];
+
+  if (includeOrganizerName) {
+    columns.push("nombre_organizador");
+    params.push(dto.nombre_organizador?.trim() || null);
+  }
+
+  columns.push(
+    "creador_id",
+    "creador_rol",
+    "creado_por_admin_id",
+    "idempotency_key",
+  );
+  params.push(
+    ownership.creadorId,
+    ownership.creadorRol,
+    ownership.creadoPorAdminId,
+    dto.idempotency_key || null,
+  );
+
+  const placeholders = params.map((_, index) => `$${index + 1}`).join(",");
+
+  return {
+    sql: `INSERT INTO eventos (${columns.join(", ")}) VALUES (${placeholders}) RETURNING *`,
+    params,
+  };
+}
+
+function buildEventoUpdateMutation(
+  dto: UpdateEventoDTO,
+  evento: EventoRow,
+  imagenUrl?: string,
+  flyerUrl?: string,
+  options?: { removeFlyer?: boolean; includeOrganizerName?: boolean },
+): { setClauses: string[]; params: unknown[] } {
+  const includeOrganizerName = options?.includeOrganizerName !== false;
+  const setClauses: string[] = [];
+  const params: unknown[] = [];
+  let paramIndex = 1;
+  const fields: Array<{ key: keyof UpdateEventoDTO; value: unknown }> = [];
+
+  if (dto.titulo !== undefined)
+    fields.push({ key: "titulo", value: dto.titulo.trim() });
+  if (dto.descripcion !== undefined)
+    fields.push({ key: "descripcion", value: dto.descripcion.trim() });
+  if (dto.fecha_evento !== undefined)
+    fields.push({ key: "fecha_evento", value: dto.fecha_evento });
+  if (dto.locacion !== undefined)
+    fields.push({ key: "locacion", value: dto.locacion.trim() });
+  if (dto.direccion !== undefined)
+    fields.push({ key: "direccion", value: dto.direccion.trim() });
+  if (dto.provincia !== undefined)
+    fields.push({ key: "provincia", value: dto.provincia.trim() });
+  if (dto.localidad !== undefined)
+    fields.push({ key: "localidad", value: dto.localidad.trim() });
+  if (dto.precio !== undefined)
+    fields.push({ key: "precio", value: dto.precio });
+  if (dto.cantidad_entradas !== undefined)
+    fields.push({ key: "cantidad_entradas", value: dto.cantidad_entradas });
+  if (dto.categoria !== undefined)
+    fields.push({ key: "categoria", value: dto.categoria.trim() });
+  if (dto.medios_pago !== undefined)
+    fields.push({
+      key: "medios_pago",
+      value: parseMediosPago(dto.medios_pago),
+    });
+  if (dto.instagram !== undefined)
+    fields.push({ key: "instagram", value: dto.instagram.trim() || null });
+  if (dto.tiktok !== undefined)
+    fields.push({ key: "tiktok", value: dto.tiktok.trim() || null });
+  if (includeOrganizerName && dto.nombre_organizador !== undefined)
+    fields.push({
+      key: "nombre_organizador",
+      value: dto.nombre_organizador.trim() || null,
+    });
+  if (dto.visible_en_app !== undefined) {
+    fields.push({
+      key: "visible_en_app",
+      value: parseBooleanLike(dto.visible_en_app),
+    });
+  }
+
+  for (const field of fields) {
+    setClauses.push(`${field.key} = $${paramIndex}`);
+    params.push(field.value);
+    paramIndex++;
+  }
+
+  if (imagenUrl) {
+    setClauses.push(`imagen_url = $${paramIndex}`);
+    params.push(imagenUrl);
+    paramIndex++;
+  }
+
+  if (flyerUrl) {
+    setClauses.push(`flyer_url = $${paramIndex}`);
+    params.push(flyerUrl);
+    paramIndex++;
+  } else if (options?.removeFlyer) {
+    setClauses.push(`flyer_url = $${paramIndex}`);
+    params.push(null);
+    paramIndex++;
+  }
+
+  if (dto.cantidad_entradas !== undefined) {
+    const newCantidad = dto.cantidad_entradas;
+    const nextEstado =
+      newCantidad <= evento.entradas_vendidas ? "AGOTADO" : "ACTIVO";
+    setClauses.push(`estado = $${paramIndex}`);
+    params.push(nextEstado);
+  }
+
+  return { setClauses, params };
+}
+
 /**
  * Resuelve a quién le queda asignado el evento. Solo un ADMIN puede delegar
  * la titularidad a un organizador existente pasando `organizador_id`. Si el
@@ -232,8 +397,6 @@ export async function createEvento(
   flyerUrl: string | null,
   user: AuthUser,
 ): Promise<CreateEventoResult> {
-  const mediosPago = parseMediosPago(dto.medios_pago);
-
   // Resolver titularidad: admin puede asignar el evento a un organizador
   // existente via dto.organizador_id. Si el caller no es admin o no envia
   // el campo, el evento queda a nombre del caller (comportamiento legacy).
@@ -258,37 +421,8 @@ export async function createEvento(
   }
 
   try {
-    const result = await query<EventoRow>(
-      `INSERT INTO eventos (
-        titulo, descripcion, fecha_evento, locacion, direccion,
-        provincia, localidad, precio, cantidad_entradas, categoria,
-        imagen_url, flyer_url, medios_pago, instagram, tiktok,
-        nombre_organizador, creador_id, creador_rol, creado_por_admin_id, idempotency_key
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
-      RETURNING *`,
-      [
-        dto.titulo.trim(),
-        dto.descripcion.trim(),
-        dto.fecha_evento,
-        dto.locacion.trim(),
-        dto.direccion.trim(),
-        dto.provincia.trim(),
-        dto.localidad.trim(),
-        dto.precio,
-        dto.cantidad_entradas,
-        dto.categoria.trim(),
-        imagenUrl,
-        flyerUrl,
-        mediosPago,
-        dto.instagram?.trim() || null,
-        dto.tiktok?.trim() || null,
-        dto.nombre_organizador?.trim() || null,
-        ownership.creadorId,
-        ownership.creadorRol,
-        ownership.creadoPorAdminId,
-        dto.idempotency_key || null,
-      ],
-    );
+    const insert = buildCreateEventoInsert(dto, imagenUrl, flyerUrl, ownership);
+    const result = await query<EventoRow>(insert.sql, insert.params);
 
     return {
       evento: await enrichSingleEventWithOrganizerName(
@@ -323,6 +457,27 @@ export async function createEvento(
           idempotentReplay: true,
         };
       }
+    }
+
+    if (isOrganizerNameColumnMissing(err)) {
+      const legacyInsert = buildCreateEventoInsert(
+        dto,
+        imagenUrl,
+        flyerUrl,
+        ownership,
+        { includeOrganizerName: false },
+      );
+      const legacyResult = await query<EventoRow>(
+        legacyInsert.sql,
+        legacyInsert.params,
+      );
+
+      return {
+        evento: await enrichSingleEventWithOrganizerName(
+          rowToEvento(legacyResult.rows[0]),
+        ),
+        idempotentReplay: false,
+      };
     }
 
     throw err;
@@ -576,96 +731,23 @@ export async function updateEvento(
 
   const evento = current.rows[0];
 
-  // Construir SET dinamico
-  const setClauses: string[] = [];
-  const params: unknown[] = [];
-  let paramIndex = 1;
+  const mutation = buildEventoUpdateMutation(
+    dto,
+    evento,
+    imagenUrl,
+    flyerUrl,
+    options,
+  );
 
-  const fields: Array<{ key: keyof UpdateEventoDTO; value: unknown }> = [];
-
-  if (dto.titulo !== undefined)
-    fields.push({ key: "titulo", value: dto.titulo.trim() });
-  if (dto.descripcion !== undefined)
-    fields.push({ key: "descripcion", value: dto.descripcion.trim() });
-  if (dto.fecha_evento !== undefined)
-    fields.push({ key: "fecha_evento", value: dto.fecha_evento });
-  if (dto.locacion !== undefined)
-    fields.push({ key: "locacion", value: dto.locacion.trim() });
-  if (dto.direccion !== undefined)
-    fields.push({ key: "direccion", value: dto.direccion.trim() });
-  if (dto.provincia !== undefined)
-    fields.push({ key: "provincia", value: dto.provincia.trim() });
-  if (dto.localidad !== undefined)
-    fields.push({ key: "localidad", value: dto.localidad.trim() });
-  if (dto.precio !== undefined)
-    fields.push({ key: "precio", value: dto.precio });
-  if (dto.cantidad_entradas !== undefined)
-    fields.push({ key: "cantidad_entradas", value: dto.cantidad_entradas });
-  if (dto.categoria !== undefined)
-    fields.push({ key: "categoria", value: dto.categoria.trim() });
-  if (dto.medios_pago !== undefined)
-    fields.push({
-      key: "medios_pago",
-      value: parseMediosPago(dto.medios_pago),
-    });
-  if (dto.instagram !== undefined)
-    fields.push({ key: "instagram", value: dto.instagram.trim() || null });
-  if (dto.tiktok !== undefined)
-    fields.push({ key: "tiktok", value: dto.tiktok.trim() || null });
-  if (dto.nombre_organizador !== undefined)
-    fields.push({
-      key: "nombre_organizador",
-      value: dto.nombre_organizador.trim() || null,
-    });
-  if (dto.visible_en_app !== undefined) {
-    fields.push({
-      key: "visible_en_app",
-      value: parseBooleanLike(dto.visible_en_app),
-    });
-  }
-
-  for (const field of fields) {
-    setClauses.push(`${field.key} = $${paramIndex}`);
-    params.push(field.value);
-    paramIndex++;
-  }
-
-  if (imagenUrl) {
-    setClauses.push(`imagen_url = $${paramIndex}`);
-    params.push(imagenUrl);
-    paramIndex++;
-  }
-
-  if (flyerUrl) {
-    setClauses.push(`flyer_url = $${paramIndex}`);
-    params.push(flyerUrl);
-    paramIndex++;
-  } else if (options?.removeFlyer) {
-    setClauses.push(`flyer_url = $${paramIndex}`);
-    params.push(null);
-    paramIndex++;
-  }
-
-  // Verificar si el estado debe cambiar de AGOTADO a ACTIVO
-  if (dto.cantidad_entradas !== undefined) {
-    const newCantidad = dto.cantidad_entradas;
-    const nextEstado =
-      newCantidad <= evento.entradas_vendidas ? "AGOTADO" : "ACTIVO";
-    setClauses.push(`estado = $${paramIndex}`);
-    params.push(nextEstado);
-    paramIndex++;
-  }
-
-  if (setClauses.length === 0) {
+  if (mutation.setClauses.length === 0) {
     return enrichSingleEventWithOrganizerName(rowToEvento(evento));
   }
 
-  params.push(id);
   let result;
   try {
     result = await query<EventoRow>(
-      `UPDATE eventos SET ${setClauses.join(", ")} WHERE id = $${paramIndex} RETURNING *`,
-      params,
+      `UPDATE eventos SET ${mutation.setClauses.join(", ")} WHERE id = $${mutation.params.length + 1} RETURNING *`,
+      [...mutation.params, id],
     );
   } catch (err) {
     const dbError = err as { code?: string; constraint?: string };
@@ -674,6 +756,41 @@ export async function updateEvento(
       dbError.constraint === "fk_eventos_categoria"
     ) {
       throwCategoriaInvalidaError();
+    }
+
+    if (isOrganizerNameColumnMissing(err)) {
+      const legacyMutation = buildEventoUpdateMutation(
+        dto,
+        evento,
+        imagenUrl,
+        flyerUrl,
+        {
+          ...options,
+          includeOrganizerName: false,
+        },
+      );
+
+      if (legacyMutation.setClauses.length === 0) {
+        return enrichSingleEventWithOrganizerName(rowToEvento(evento));
+      }
+
+      try {
+        result = await query<EventoRow>(
+          `UPDATE eventos SET ${legacyMutation.setClauses.join(", ")} WHERE id = $${legacyMutation.params.length + 1} RETURNING *`,
+          [...legacyMutation.params, id],
+        );
+      } catch (legacyErr) {
+        const legacyDbError = legacyErr as { code?: string; constraint?: string };
+        if (
+          legacyDbError.code === "23503" &&
+          legacyDbError.constraint === "fk_eventos_categoria"
+        ) {
+          throwCategoriaInvalidaError();
+        }
+        throw legacyErr;
+      }
+
+      return enrichSingleEventWithOrganizerName(rowToEvento(result.rows[0]));
     }
     throw err;
   }

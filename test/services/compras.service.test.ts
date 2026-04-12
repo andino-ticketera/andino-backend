@@ -27,6 +27,7 @@ vi.mock("../../src/services/ticket-assets.service.js", () => ({
 import {
   getCompraDetalleByUser,
   getEntradaDetalleByUser,
+  listComprasForAdmin,
   listComprasByUser,
 } from "../../src/services/compras.service.js";
 
@@ -86,6 +87,74 @@ describe("compras.service", () => {
         fecha_evento: fechaEvento.toISOString(),
       }),
     ]);
+  });
+
+  it("lista compras admin aunque la DB legacy no tenga nombre_organizador", async () => {
+    const fechaCompra = new Date("2026-04-03T12:00:00.000Z");
+    const fechaEvento = new Date("2026-05-01T21:00:00.000Z");
+
+    mocks.queryMock
+      .mockRejectedValueOnce(
+        Object.assign(new Error("missing column"), {
+          code: "42703",
+          message: "column e.nombre_organizador does not exist",
+        }),
+      )
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            id: "compra-1",
+            user_id: "user-1",
+            evento_id: "evento-1",
+            evento_titulo: "Festival Andino",
+            fecha_evento: fechaEvento,
+            ubicacion_evento: "Teatro, Mendoza, Mendoza",
+            creador_id: "org-1",
+            nombre_organizador: null,
+            cantidad: 2,
+            precio_unitario: "15000.00",
+            precio_total: "30000.00",
+            metodo_pago: "MERCADO_PAGO",
+            estado: "PAGADO",
+            fecha_compra: fechaCompra,
+            comprador_nombre: "Ana",
+            comprador_apellido: "Perez",
+            comprador_email: "ana@example.com",
+            comprador_documento: "12345678",
+            comprador_tipo_documento: "DNI",
+            entradas_usadas: 1,
+          },
+        ],
+      });
+
+    mocks.getPublicUsersByIdsMock.mockResolvedValueOnce(
+      new Map([
+        [
+          "org-1",
+          {
+            id: "org-1",
+            nombreCompleto: "Organizador Demo",
+            email: "org@example.com",
+            rol: "ORGANIZADOR",
+          },
+        ],
+      ]),
+    );
+
+    const result = await listComprasForAdmin();
+
+    expect(result).toEqual([
+      expect.objectContaining({
+        id: "compra-1",
+        nombre_organizador: "Organizador Demo",
+        comprador_email: "ana@example.com",
+        entradas_usadas: 1,
+      }),
+    ]);
+    expect(mocks.queryMock).toHaveBeenCalledTimes(2);
+    expect(mocks.queryMock.mock.calls[1]?.[0]).toContain(
+      "NULL::text AS nombre_organizador",
+    );
   });
 
   it("devuelve detalle de compra propia con entradas", async () => {

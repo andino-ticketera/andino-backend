@@ -3,6 +3,7 @@ import { env } from "../config/env.js";
 import { query } from "../db/pool.js";
 import { logger } from "../lib/logger.js";
 import { AppError } from "../utils/errors.js";
+import { isMissingColumnError } from "../utils/db-compat.js";
 import {
   normalizeEmail,
   normalizeFullName,
@@ -64,6 +65,10 @@ interface ValidatedOrganizerLead {
 }
 
 const resendClient = env.resendApiKey ? new Resend(env.resendApiKey) : null;
+
+function isOrganizerNameColumnMissing(error: unknown): boolean {
+  return isMissingColumnError(error, "nombre_organizador");
+}
 
 function serializeProviderError(error: unknown): Record<string, unknown> {
   if (!error || typeof error !== "object") {
@@ -357,8 +362,10 @@ async function loadPurchaseEmailPayload(compraId: string): Promise<{
   entradas: PurchaseEntryRow[];
   organizador: string;
 }> {
-  const compraResult = await query<PurchaseEmailRow>(
-    `SELECT
+  let compraResult;
+  try {
+    compraResult = await query<PurchaseEmailRow>(
+      `SELECT
       c.id,
       c.user_id,
       c.comprador_nombre,
@@ -376,8 +383,35 @@ async function loadPurchaseEmailPayload(compraId: string): Promise<{
     INNER JOIN eventos e ON e.id = c.evento_id
     WHERE c.id = $1 AND c.estado = 'PAGADO'
     LIMIT 1`,
-    [compraId],
-  );
+      [compraId],
+    );
+  } catch (error) {
+    if (!isOrganizerNameColumnMissing(error)) {
+      throw error;
+    }
+
+    compraResult = await query<PurchaseEmailRow>(
+      `SELECT
+        c.id,
+        c.user_id,
+        c.comprador_nombre,
+        c.comprador_apellido,
+        c.comprador_email,
+        c.precio_total,
+        c.created_at,
+        e.titulo AS evento_titulo,
+        e.fecha_evento,
+        e.locacion,
+        e.direccion,
+        e.creador_id,
+        NULL::text AS nombre_organizador
+      FROM compras c
+      INNER JOIN eventos e ON e.id = c.evento_id
+      WHERE c.id = $1 AND c.estado = 'PAGADO'
+      LIMIT 1`,
+      [compraId],
+    );
+  }
 
   const compra = compraResult.rows[0];
   if (!compra || !compra.comprador_email) {

@@ -1,6 +1,7 @@
 import { env } from "../config/env.js";
 import { query } from "../db/pool.js";
 import { AppError } from "../utils/errors.js";
+import { isMissingColumnError } from "../utils/db-compat.js";
 import type {
   AuthUser,
   CompraDetalle,
@@ -85,6 +86,26 @@ function toIsoString(value: Date | null): string | undefined {
   return value ? value.toISOString() : undefined;
 }
 
+function isOrganizerNameColumnMissing(error: unknown): boolean {
+  return isMissingColumnError(error, "nombre_organizador");
+}
+
+async function queryWithOrganizerNameFallback<T extends object>(
+  sql: string,
+  fallbackSql: string,
+  params: unknown[],
+) {
+  try {
+    return await query<T>(sql, params);
+  } catch (error) {
+    if (!isOrganizerNameColumnMissing(error)) {
+      throw error;
+    }
+
+    return query<T>(fallbackSql, params);
+  }
+}
+
 function buildCompraResumen(
   row: CompraListRow,
   organizerName: string,
@@ -166,7 +187,7 @@ export async function listComprasByUser(
   const limit = Math.min(Math.max(options?.limit ?? 100, 1), 100);
   const offset = Math.max(options?.offset ?? 0, 0);
 
-  const result = await query<CompraListRow>(
+  const result = await queryWithOrganizerNameFallback<CompraListRow>(
     `SELECT
       c.id,
       c.user_id,
@@ -176,6 +197,26 @@ export async function listComprasByUser(
       CONCAT(e.locacion, ', ', e.localidad, ', ', e.provincia) AS ubicacion_evento,
       e.creador_id,
       e.nombre_organizador,
+      c.cantidad,
+      c.precio_unitario,
+      c.precio_total,
+      c.metodo_pago,
+      c.estado,
+      c.created_at AS fecha_compra
+    FROM compras c
+    INNER JOIN eventos e ON e.id = c.evento_id
+    WHERE c.user_id = $1
+    ORDER BY c.created_at DESC
+    LIMIT $2 OFFSET $3`,
+    `SELECT
+      c.id,
+      c.user_id,
+      c.evento_id,
+      e.titulo AS evento_titulo,
+      e.fecha_evento,
+      CONCAT(e.locacion, ', ', e.localidad, ', ', e.provincia) AS ubicacion_evento,
+      e.creador_id,
+      NULL::text AS nombre_organizador,
       c.cantidad,
       c.precio_unitario,
       c.precio_total,
@@ -210,7 +251,7 @@ async function listComprasGestionadas(
   const limitPosition = params.length + 1;
   const offsetPosition = params.length + 2;
 
-  const result = await query<CompraGestionRow>(
+  const result = await queryWithOrganizerNameFallback<CompraGestionRow>(
     `SELECT
       c.id,
       c.user_id,
@@ -260,6 +301,54 @@ async function listComprasGestionadas(
       c.comprador_tipo_documento
     ORDER BY c.created_at DESC
     LIMIT $${limitPosition} OFFSET $${offsetPosition}`,
+    `SELECT
+      c.id,
+      c.user_id,
+      c.evento_id,
+      e.titulo AS evento_titulo,
+      e.fecha_evento,
+      CONCAT(e.locacion, ', ', e.localidad, ', ', e.provincia) AS ubicacion_evento,
+      e.creador_id,
+      NULL::text AS nombre_organizador,
+      c.cantidad,
+      c.precio_unitario,
+      c.precio_total,
+      c.metodo_pago,
+      c.estado,
+      c.created_at AS fecha_compra,
+      c.comprador_nombre,
+      c.comprador_apellido,
+      c.comprador_email,
+      c.comprador_documento,
+      c.comprador_tipo_documento,
+      COALESCE(COUNT(en.id) FILTER (WHERE en.estado = 'USADA'), 0)::int AS entradas_usadas
+    FROM compras c
+    INNER JOIN eventos e ON e.id = c.evento_id
+    LEFT JOIN entradas en ON en.compra_id = c.id
+    ${whereClause}
+    GROUP BY
+      c.id,
+      c.user_id,
+      c.evento_id,
+      e.titulo,
+      e.fecha_evento,
+      e.locacion,
+      e.localidad,
+      e.provincia,
+      e.creador_id,
+      c.cantidad,
+      c.precio_unitario,
+      c.precio_total,
+      c.metodo_pago,
+      c.estado,
+      c.created_at,
+      c.comprador_nombre,
+      c.comprador_apellido,
+      c.comprador_email,
+      c.comprador_documento,
+      c.comprador_tipo_documento
+    ORDER BY c.created_at DESC
+    LIMIT $${limitPosition} OFFSET $${offsetPosition}`,
     [...params, limit, offset],
   );
 
@@ -290,7 +379,7 @@ export async function getCompraDetalleByUser(
   userId: string,
   compraId: string,
 ): Promise<CompraDetalle> {
-  const compraResult = await query<CompraListRow>(
+  const compraResult = await queryWithOrganizerNameFallback<CompraListRow>(
     `SELECT
       c.id,
       c.user_id,
@@ -300,6 +389,25 @@ export async function getCompraDetalleByUser(
       CONCAT(e.locacion, ', ', e.localidad, ', ', e.provincia) AS ubicacion_evento,
       e.creador_id,
       e.nombre_organizador,
+      c.cantidad,
+      c.precio_unitario,
+      c.precio_total,
+      c.metodo_pago,
+      c.estado,
+      c.created_at AS fecha_compra
+    FROM compras c
+    INNER JOIN eventos e ON e.id = c.evento_id
+    WHERE c.id = $1 AND c.user_id = $2
+    LIMIT 1`,
+    `SELECT
+      c.id,
+      c.user_id,
+      c.evento_id,
+      e.titulo AS evento_titulo,
+      e.fecha_evento,
+      CONCAT(e.locacion, ', ', e.localidad, ', ', e.provincia) AS ubicacion_evento,
+      e.creador_id,
+      NULL::text AS nombre_organizador,
       c.cantidad,
       c.precio_unitario,
       c.precio_total,
@@ -396,7 +504,7 @@ export async function getEntradaDetalleByUser(
   userId: string,
   entradaId: string,
 ): Promise<EntradaDetalle> {
-  const result = await query<EntradaDetalleRow>(
+  const result = await queryWithOrganizerNameFallback<EntradaDetalleRow>(
     `SELECT
       en.id,
       en.compra_id,
@@ -413,6 +521,27 @@ export async function getEntradaDetalleByUser(
       e.direccion,
       e.creador_id,
       e.nombre_organizador
+    FROM entradas en
+    INNER JOIN compras c ON c.id = en.compra_id
+    INNER JOIN eventos e ON e.id = en.evento_id
+    WHERE en.id = $1 AND c.user_id = $2
+    LIMIT 1`,
+    `SELECT
+      en.id,
+      en.compra_id,
+      en.evento_id,
+      en.numero_entrada,
+      en.qr_token,
+      en.estado,
+      en.usada_at,
+      c.user_id AS compra_user_id,
+      c.estado AS compra_estado,
+      e.titulo AS evento_titulo,
+      e.fecha_evento,
+      e.locacion,
+      e.direccion,
+      e.creador_id,
+      NULL::text AS nombre_organizador
     FROM entradas en
     INNER JOIN compras c ON c.id = en.compra_id
     INNER JOIN eventos e ON e.id = en.evento_id

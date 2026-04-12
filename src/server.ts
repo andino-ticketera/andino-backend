@@ -23,6 +23,11 @@ import { isPublicAssetFilename } from "./services/eventos.service.js";
 const app = express();
 const UPLOADS_EVENTS_DIR = path.resolve("uploads/events");
 
+// Render queda detras de un proxy reverso. Confiamos en un unico hop para que
+// express-rate-limit identifique la IP real y deje de disparar el warning por
+// X-Forwarded-For en produccion.
+app.set("trust proxy", 1);
+
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 300,

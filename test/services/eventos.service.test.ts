@@ -29,6 +29,7 @@ import {
   hideFinishedEvents,
   listEventosForAdmin,
   parseFinalizadosFilter,
+  updateEvento,
 } from "../../src/services/eventos.service.js";
 
 // ── Helpers ────────────────────────────────────────────────────────────
@@ -268,6 +269,59 @@ describe("eventos.service.createEvento — asignacion admin → organizador", ()
     expect(result.evento.creado_por_admin_id).toBe("admin-1");
     // El service no debe consultar `organizador_mercado_pago` en este flujo.
   });
+
+  it("reintenta el alta sin nombre_organizador cuando la DB legacy no tiene esa columna", async () => {
+    mocks.queryMock
+      .mockRejectedValueOnce(
+        Object.assign(new Error("missing column"), {
+          code: "42703",
+          message: 'column "nombre_organizador" of relation "eventos" does not exist',
+        }),
+      )
+      .mockResolvedValueOnce({
+        rows: [
+          buildInsertedRow({
+            creador_id: "org-caller",
+            creador_rol: "ORGANIZADOR",
+            nombre_organizador: null,
+          }),
+        ],
+      });
+
+    mocks.getPublicUsersByIdsMock.mockResolvedValueOnce(
+      new Map([
+        [
+          "org-caller",
+          {
+            id: "org-caller",
+            nombreCompleto: "Organizador Existente",
+            email: "org@andino.dev",
+            rol: "ORGANIZADOR",
+          },
+        ],
+      ]),
+    );
+
+    const dto = buildCreateDto({
+      medios_pago: ["TRANSFERENCIA_CBU"],
+      nombre_organizador: "Nombre legacy",
+    });
+
+    const result = await createEvento(
+      dto,
+      "/uploads/events/x.jpg",
+      null,
+      ORGANIZADOR_CALLER,
+    );
+
+    expect(result.idempotentReplay).toBe(false);
+    expect(result.evento.creador_id).toBe("org-caller");
+    expect(result.evento.nombre_organizador).toBe("Organizador Existente");
+    expect(mocks.queryMock).toHaveBeenCalledTimes(2);
+    expect(mocks.queryMock.mock.calls[1]?.[0]).not.toContain(
+      "nombre_organizador",
+    );
+  });
 });
 
 // ── hideFinishedEvents ─────────────────────────────────────────────────
@@ -387,5 +441,67 @@ describe("eventos.service.parseFinalizadosFilter", () => {
     expect(parseFinalizadosFilter("INCLUIR")).toBe("incluir");
     expect(parseFinalizadosFilter(" solo ")).toBe("solo");
     expect(parseFinalizadosFilter("Solo")).toBe("solo");
+  });
+});
+
+describe("eventos.service.updateEvento", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("reintenta el update sin nombre_organizador cuando la DB legacy no tiene esa columna", async () => {
+    mocks.queryMock
+      .mockResolvedValueOnce({
+        rows: [
+          buildInsertedRow({
+            id: "evt-1",
+            creador_id: "org-existente",
+            nombre_organizador: null,
+          }),
+        ],
+      })
+      .mockRejectedValueOnce(
+        Object.assign(new Error("missing column"), {
+          code: "42703",
+          message: 'column "nombre_organizador" of relation "eventos" does not exist',
+        }),
+      )
+      .mockResolvedValueOnce({
+        rows: [
+          buildInsertedRow({
+            id: "evt-1",
+            titulo: "Evento actualizado",
+            creador_id: "org-existente",
+            nombre_organizador: null,
+          }),
+        ],
+      });
+
+    mocks.getPublicUsersByIdsMock.mockResolvedValueOnce(
+      new Map([
+        [
+          "org-existente",
+          {
+            id: "org-existente",
+            nombreCompleto: "Organizador Existente",
+            email: "org@andino.dev",
+            rol: "ORGANIZADOR",
+          },
+        ],
+      ]),
+    );
+
+    const result = await updateEvento("evt-1", {
+      titulo: "Evento actualizado",
+      nombre_organizador: "Nombre que no puede persistirse todavia",
+    });
+
+    expect(result.titulo).toBe("Evento actualizado");
+    expect(result.nombre_organizador).toBe("Organizador Existente");
+    expect(mocks.queryMock).toHaveBeenCalledTimes(3);
+    expect(mocks.queryMock.mock.calls[1]?.[0]).toContain("nombre_organizador");
+    expect(mocks.queryMock.mock.calls[2]?.[0]).not.toContain(
+      "nombre_organizador",
+    );
   });
 });
