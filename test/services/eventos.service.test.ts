@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => {
   return {
     queryMock: vi.fn(),
     getPublicUserByIdMock: vi.fn(),
+    getPublicUsersByIdsMock: vi.fn().mockResolvedValue(new Map()),
   };
 });
 
@@ -20,6 +21,7 @@ vi.mock("../../src/db/pool.js", () => ({
 
 vi.mock("../../src/services/auth.service.js", () => ({
   getPublicUserById: mocks.getPublicUserByIdMock,
+  getPublicUsersByIds: mocks.getPublicUsersByIdsMock,
 }));
 
 import {

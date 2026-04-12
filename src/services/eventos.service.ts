@@ -12,7 +12,7 @@ import type {
   CreadorRol,
 } from "../types/index.js";
 import { parseMediosPago } from "../validators/eventos.validator.js";
-import { getPublicUserById } from "./auth.service.js";
+import { getPublicUserById, getPublicUsersByIds } from "./auth.service.js";
 
 interface EventoRow {
   id: string;
@@ -89,6 +89,21 @@ function rowToEvento(row: EventoRow): Evento {
     created_at: row.created_at.toISOString(),
     updated_at: row.updated_at.toISOString(),
   };
+}
+
+async function enrichWithOrganizerNames(eventos: Evento[]): Promise<Evento[]> {
+  if (eventos.length === 0) return eventos;
+
+  const creatorIds = eventos.map((e) => e.creador_id);
+  const usersById = await getPublicUsersByIds(creatorIds);
+
+  return eventos.map((evento) => {
+    const user = usersById.get(evento.creador_id);
+    return {
+      ...evento,
+      nombre_organizador: user?.nombreCompleto || undefined,
+    };
+  });
 }
 
 function parseBooleanLike(value: unknown): boolean {
@@ -374,8 +389,10 @@ export async function listEventos(
   const total =
     dataResult.rows.length > 0 ? parseInt(dataResult.rows[0]._total, 10) : 0;
 
+  const eventos = await enrichWithOrganizerNames(dataResult.rows.map(rowToEvento));
+
   return {
-    data: dataResult.rows.map(rowToEvento),
+    data: eventos,
     pagination: {
       page,
       limit,
@@ -422,7 +439,9 @@ export async function getEventoById(id: string): Promise<Evento> {
     );
   }
 
-  return rowToEvento(result.rows[0]);
+  const evento = rowToEvento(result.rows[0]);
+  const enriched = await enrichWithOrganizerNames([evento]);
+  return enriched[0];
 }
 
 export async function listEventosByCreator(userId: string): Promise<Evento[]> {
@@ -431,7 +450,7 @@ export async function listEventosByCreator(userId: string): Promise<Evento[]> {
     [userId],
   );
 
-  return result.rows.map(rowToEvento);
+  return enrichWithOrganizerNames(result.rows.map(rowToEvento));
 }
 
 /**
@@ -500,7 +519,7 @@ export async function listEventosForAdmin(
      ORDER BY fecha_evento DESC, created_at DESC`,
   );
 
-  return result.rows.map(rowToEvento);
+  return enrichWithOrganizerNames(result.rows.map(rowToEvento));
 }
 
 export async function updateEvento(

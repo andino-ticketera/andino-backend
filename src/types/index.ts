@@ -33,6 +33,7 @@ export interface Evento {
   creador_id: string;
   creador_rol: CreadorRol;
   creado_por_admin_id: string | null;
+  nombre_organizador?: string;
   created_at: string;
   updated_at: string;
 }
