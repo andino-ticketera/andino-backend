@@ -106,6 +106,13 @@ async function enrichWithOrganizerNames(eventos: Evento[]): Promise<Evento[]> {
   });
 }
 
+async function enrichSingleEventWithOrganizerName(
+  evento: Evento,
+): Promise<Evento> {
+  const [enriched] = await enrichWithOrganizerNames([evento]);
+  return enriched;
+}
+
 function parseBooleanLike(value: unknown): boolean {
   if (typeof value === "boolean") return value;
   return String(value).trim().toLowerCase() === "true";
@@ -225,7 +232,9 @@ export async function createEvento(
     );
     if (existing.rows.length > 0) {
       return {
-        evento: rowToEvento(existing.rows[0]),
+        evento: await enrichSingleEventWithOrganizerName(
+          rowToEvento(existing.rows[0]),
+        ),
         idempotentReplay: true,
       };
     }
@@ -264,7 +273,9 @@ export async function createEvento(
     );
 
     return {
-      evento: rowToEvento(result.rows[0]),
+      evento: await enrichSingleEventWithOrganizerName(
+        rowToEvento(result.rows[0]),
+      ),
       idempotentReplay: false,
     };
   } catch (err) {
@@ -288,7 +299,9 @@ export async function createEvento(
       );
       if (existing.rows.length > 0) {
         return {
-          evento: rowToEvento(existing.rows[0]),
+          evento: await enrichSingleEventWithOrganizerName(
+            rowToEvento(existing.rows[0]),
+          ),
           idempotentReplay: true,
         };
       }
@@ -646,7 +659,7 @@ export async function updateEvento(
     await query(`DELETE FROM carrusel_eventos WHERE evento_id = $1`, [id]);
   }
 
-  return rowToEvento(result.rows[0]);
+  return enrichSingleEventWithOrganizerName(rowToEvento(result.rows[0]));
 }
 
 export async function deleteEvento(
