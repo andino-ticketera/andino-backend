@@ -44,6 +44,20 @@ function parseMediosPago(raw: unknown): MedioPago[] {
   return [];
 }
 
+function validateOrganizerNameField(
+  value: unknown,
+  errors: ValidationDetail[],
+): void {
+  const nombreOrganizador = String(value ?? "").trim();
+  if (nombreOrganizador.length < 2 || nombreOrganizador.length > 120) {
+    errors.push({
+      campo: "nombre_organizador",
+      mensaje:
+        "El nombre del organizador debe tener entre 2 y 120 caracteres",
+    });
+  }
+}
+
 export function validateCreateEvento(
   body: Record<string, unknown>,
   files: { imagen?: Express.Multer.File[]; flyer?: Express.Multer.File[] },
@@ -263,6 +277,14 @@ export function validateCreateEvento(
     }
   }
 
+  if (
+    body.nombre_organizador !== undefined &&
+    body.nombre_organizador !== null &&
+    String(body.nombre_organizador).trim() !== ""
+  ) {
+    validateOrganizerNameField(body.nombre_organizador, errors);
+  }
+
   // organizador_id (opcional, solo para ADMIN). Acá validamos únicamente
   // el formato; la existencia y el rol del usuario destino se chequean en
   // el service consultando Supabase.
@@ -304,6 +326,7 @@ export function validateUpdateEvento(
     "medios_pago",
     "instagram",
     "tiktok",
+    "nombre_organizador",
     "visible_en_app",
     "remove_flyer",
   ];
@@ -539,6 +562,10 @@ export function validateUpdateEvento(
         mensaje: "TikTok debe ser una URL valida o @usuario",
       });
     }
+  }
+
+  if (body.nombre_organizador !== undefined) {
+    validateOrganizerNameField(body.nombre_organizador, errors);
   }
 
   // Regla cruzada final: evento gratuito + mercado pago (con estado resultante)

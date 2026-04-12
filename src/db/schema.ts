@@ -71,6 +71,7 @@ CREATE TABLE IF NOT EXISTS eventos (
   visible_en_app  BOOLEAN NOT NULL DEFAULT TRUE,
   creador_id      UUID NOT NULL,
   creador_rol     TEXT NOT NULL CHECK (creador_rol IN ('ORGANIZADOR', 'ADMIN')),
+  nombre_organizador TEXT,
   idempotency_key VARCHAR(128),
   created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -89,7 +90,8 @@ CREATE INDEX IF NOT EXISTS ix_eventos_estado_fecha
 -- es el propio dueño del evento.
 ALTER TABLE eventos
   ADD COLUMN IF NOT EXISTS visible_en_app BOOLEAN NOT NULL DEFAULT TRUE,
-  ADD COLUMN IF NOT EXISTS creado_por_admin_id UUID NULL;
+  ADD COLUMN IF NOT EXISTS creado_por_admin_id UUID NULL,
+  ADD COLUMN IF NOT EXISTS nombre_organizador TEXT;
 
 CREATE INDEX IF NOT EXISTS ix_eventos_visible_estado_fecha
   ON eventos (visible_en_app, estado, fecha_evento ASC);

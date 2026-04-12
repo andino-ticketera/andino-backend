@@ -39,6 +39,7 @@ interface PurchaseEmailRow {
   locacion: string;
   direccion: string;
   creador_id: string;
+  nombre_organizador: string | null;
 }
 
 interface PurchaseEntryRow {
@@ -369,7 +370,8 @@ async function loadPurchaseEmailPayload(compraId: string): Promise<{
       e.fecha_evento,
       e.locacion,
       e.direccion,
-      e.creador_id
+      e.creador_id,
+      e.nombre_organizador
     FROM compras c
     INNER JOIN eventos e ON e.id = c.evento_id
     WHERE c.id = $1 AND c.estado = 'PAGADO'
@@ -390,12 +392,17 @@ async function loadPurchaseEmailPayload(compraId: string): Promise<{
     [compraId],
   );
 
-  const organizador = await getPublicUserById(compra.creador_id);
+  const organizadorFallback = compra.nombre_organizador?.trim()
+    ? null
+    : await getPublicUserById(compra.creador_id);
 
   return {
     compra,
     entradas: entradasResult.rows,
-    organizador: organizador?.nombreCompleto || "Andino Tickets",
+    organizador:
+      compra.nombre_organizador?.trim() ||
+      organizadorFallback?.nombreCompleto ||
+      "Andino Tickets",
   };
 }
 

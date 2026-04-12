@@ -37,6 +37,7 @@ interface EventoRow {
   creador_id: string;
   creador_rol: string;
   creado_por_admin_id: string | null;
+  nombre_organizador: string | null;
   idempotency_key: string | null;
   created_at: Date;
   updated_at: Date;
@@ -86,6 +87,7 @@ function rowToEvento(row: EventoRow): Evento {
     creador_id: row.creador_id,
     creador_rol: row.creador_rol as Evento["creador_rol"],
     creado_por_admin_id: row.creado_por_admin_id,
+    nombre_organizador: row.nombre_organizador?.trim() || undefined,
     created_at: row.created_at.toISOString(),
     updated_at: row.updated_at.toISOString(),
   };
@@ -94,14 +96,29 @@ function rowToEvento(row: EventoRow): Evento {
 async function enrichWithOrganizerNames(eventos: Evento[]): Promise<Evento[]> {
   if (eventos.length === 0) return eventos;
 
-  const creatorIds = eventos.map((e) => e.creador_id);
-  const usersById = await getPublicUsersByIds(creatorIds);
+  const creatorIds = [
+    ...new Set(
+      eventos
+        .filter((evento) => !evento.nombre_organizador?.trim())
+        .map((evento) => evento.creador_id),
+    ),
+  ];
+  const usersById =
+    creatorIds.length > 0 ? await getPublicUsersByIds(creatorIds) : new Map();
 
   return eventos.map((evento) => {
+    const storedOrganizerName = evento.nombre_organizador?.trim();
+    if (storedOrganizerName) {
+      return {
+        ...evento,
+        nombre_organizador: storedOrganizerName,
+      };
+    }
+
     const user = usersById.get(evento.creador_id);
     return {
       ...evento,
-      nombre_organizador: user?.nombreCompleto || undefined,
+      nombre_organizador: user?.nombreCompleto?.trim() || undefined,
     };
   });
 }
@@ -246,8 +263,8 @@ export async function createEvento(
         titulo, descripcion, fecha_evento, locacion, direccion,
         provincia, localidad, precio, cantidad_entradas, categoria,
         imagen_url, flyer_url, medios_pago, instagram, tiktok,
-        creador_id, creador_rol, creado_por_admin_id, idempotency_key
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
+        nombre_organizador, creador_id, creador_rol, creado_por_admin_id, idempotency_key
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
       RETURNING *`,
       [
         dto.titulo.trim(),
@@ -265,6 +282,7 @@ export async function createEvento(
         mediosPago,
         dto.instagram?.trim() || null,
         dto.tiktok?.trim() || null,
+        dto.nombre_organizador?.trim() || null,
         ownership.creadorId,
         ownership.creadorRol,
         ownership.creadoPorAdminId,
@@ -594,6 +612,11 @@ export async function updateEvento(
     fields.push({ key: "instagram", value: dto.instagram.trim() || null });
   if (dto.tiktok !== undefined)
     fields.push({ key: "tiktok", value: dto.tiktok.trim() || null });
+  if (dto.nombre_organizador !== undefined)
+    fields.push({
+      key: "nombre_organizador",
+      value: dto.nombre_organizador.trim() || null,
+    });
   if (dto.visible_en_app !== undefined) {
     fields.push({
       key: "visible_en_app",
@@ -634,7 +657,7 @@ export async function updateEvento(
   }
 
   if (setClauses.length === 0) {
-    return rowToEvento(evento);
+    return enrichSingleEventWithOrganizerName(rowToEvento(evento));
   }
 
   params.push(id);

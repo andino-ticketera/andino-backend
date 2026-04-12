@@ -46,6 +46,7 @@ function buildCreateDto(overrides: Partial<CreateEventoDTO> = {}): CreateEventoD
     cantidad_entradas: 200,
     categoria: "Musica",
     medios_pago: ["MERCADO_PAGO"],
+    nombre_organizador: "Polka Produce",
     ...overrides,
   };
 }
@@ -73,6 +74,7 @@ function buildInsertedRow(overrides: Record<string, unknown> = {}): Record<strin
     creador_id: "org-existente",
     creador_rol: "ORGANIZADOR",
     creado_por_admin_id: null,
+    nombre_organizador: "Polka Produce",
     idempotency_key: null,
     created_at: new Date("2026-04-10T10:00:00.000Z"),
     updated_at: new Date("2026-04-10T10:00:00.000Z"),
@@ -125,15 +127,17 @@ describe("eventos.service.createEvento — asignacion admin → organizador", ()
     expect(result.evento.creador_id).toBe("org-existente");
     expect(result.evento.creador_rol).toBe("ORGANIZADOR");
     expect(result.evento.creado_por_admin_id).toBe("admin-1");
+    expect(result.evento.nombre_organizador).toBe("Polka Produce");
 
     // Verificamos que los parametros del INSERT reflejan la delegacion.
     const insertCall = mocks.queryMock.mock.calls.at(-1);
     expect(insertCall?.[0]).toContain("INSERT INTO eventos");
     const params = insertCall?.[1] as unknown[];
-    // [16] = creador_id, [17] = creador_rol, [18] = creado_por_admin_id
-    expect(params[15]).toBe("org-existente");
-    expect(params[16]).toBe("ORGANIZADOR");
-    expect(params[17]).toBe("admin-1");
+    // [16] = nombre_organizador, [17] = creador_id, [18] = creador_rol, [19] = creado_por_admin_id
+    expect(params[15]).toBe("Polka Produce");
+    expect(params[16]).toBe("org-existente");
+    expect(params[17]).toBe("ORGANIZADOR");
+    expect(params[18]).toBe("admin-1");
   });
 
   it("rechaza organizador_id que apunta a un USUARIO comun (rol insuficiente)", async () => {
@@ -200,9 +204,10 @@ describe("eventos.service.createEvento — asignacion admin → organizador", ()
 
     const insertCall = mocks.queryMock.mock.calls.at(-1);
     const params = insertCall?.[1] as unknown[];
-    expect(params[15]).toBe("org-caller");
-    expect(params[16]).toBe("ORGANIZADOR");
-    expect(params[17]).toBeNull();
+    expect(params[15]).toBe("Polka Produce");
+    expect(params[16]).toBe("org-caller");
+    expect(params[17]).toBe("ORGANIZADOR");
+    expect(params[18]).toBeNull();
   });
 
   it("admin que no envia organizador_id crea el evento en su propio nombre (legacy)", async () => {

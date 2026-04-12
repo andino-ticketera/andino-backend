@@ -24,6 +24,7 @@ interface CompraListRow {
   fecha_evento: Date;
   ubicacion_evento: string;
   creador_id: string;
+  nombre_organizador: string | null;
   cantidad: number;
   precio_unitario: string;
   precio_total: string;
@@ -50,6 +51,7 @@ interface EntradaDetalleRow extends EntradaRow {
   locacion: string;
   direccion: string;
   creador_id: string;
+  nombre_organizador: string | null;
 }
 
 interface PerfilCompradorRow {
@@ -131,17 +133,27 @@ function buildCompraGestionResumen(
 async function resolveOrganizerNames(
   rows: CompraListRow[],
 ): Promise<Map<string, string>> {
-  const usersById = await getPublicUsersByIds(
-    rows.map((row) => row.creador_id),
-  );
   const organizerNames = new Map<string, string>();
+  const pendingCreatorIds = new Set<string>();
 
   for (const row of rows) {
-    const organizer = usersById.get(row.creador_id);
-    organizerNames.set(
-      row.creador_id,
-      organizer?.nombreCompleto || "Organizador",
-    );
+    const storedName = row.nombre_organizador?.trim();
+    if (storedName) {
+      organizerNames.set(row.creador_id, storedName);
+      continue;
+    }
+    pendingCreatorIds.add(row.creador_id);
+  }
+
+  if (pendingCreatorIds.size === 0) {
+    return organizerNames;
+  }
+
+  const usersById = await getPublicUsersByIds([...pendingCreatorIds]);
+
+  for (const creatorId of pendingCreatorIds) {
+    const organizer = usersById.get(creatorId);
+    organizerNames.set(creatorId, organizer?.nombreCompleto || "Organizador");
   }
 
   return organizerNames;
@@ -163,6 +175,7 @@ export async function listComprasByUser(
       e.fecha_evento,
       CONCAT(e.locacion, ', ', e.localidad, ', ', e.provincia) AS ubicacion_evento,
       e.creador_id,
+      e.nombre_organizador,
       c.cantidad,
       c.precio_unitario,
       c.precio_total,
@@ -206,6 +219,7 @@ async function listComprasGestionadas(
       e.fecha_evento,
       CONCAT(e.locacion, ', ', e.localidad, ', ', e.provincia) AS ubicacion_evento,
       e.creador_id,
+      e.nombre_organizador,
       c.cantidad,
       c.precio_unitario,
       c.precio_total,
@@ -232,6 +246,7 @@ async function listComprasGestionadas(
       e.localidad,
       e.provincia,
       e.creador_id,
+      e.nombre_organizador,
       c.cantidad,
       c.precio_unitario,
       c.precio_total,
@@ -284,6 +299,7 @@ export async function getCompraDetalleByUser(
       e.fecha_evento,
       CONCAT(e.locacion, ', ', e.localidad, ', ', e.provincia) AS ubicacion_evento,
       e.creador_id,
+      e.nombre_organizador,
       c.cantidad,
       c.precio_unitario,
       c.precio_total,
@@ -395,7 +411,8 @@ export async function getEntradaDetalleByUser(
       e.fecha_evento,
       e.locacion,
       e.direccion,
-      e.creador_id
+      e.creador_id,
+      e.nombre_organizador
     FROM entradas en
     INNER JOIN compras c ON c.id = en.compra_id
     INNER JOIN eventos e ON e.id = en.evento_id
@@ -415,7 +432,9 @@ export async function getEntradaDetalleByUser(
 
   const [buyer, organizer] = await Promise.all([
     getPublicUserById(row.compra_user_id),
-    getPublicUserById(row.creador_id),
+    row.nombre_organizador?.trim()
+      ? Promise.resolve(null)
+      : getPublicUserById(row.creador_id),
   ]);
 
   if (!buyer) {
@@ -426,7 +445,10 @@ export async function getEntradaDetalleByUser(
     );
   }
 
-  const organizerName = organizer?.nombreCompleto || "Organizador";
+  const organizerName =
+    row.nombre_organizador?.trim() ||
+    organizer?.nombreCompleto ||
+    "Organizador";
   // URL publica que codificamos dentro del QR. Cuando alguien escanea el QR
   // con el celular se abre directamente la pagina de confirmacion de la
   // compra sin requerir sesion. El check-in del organizador sigue usando

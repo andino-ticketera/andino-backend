@@ -24,6 +24,7 @@ function buildValidCreateBody(): Record<string, unknown> {
     cantidad_entradas: 200,
     categoria: "Musica",
     medios_pago: ["TRANSFERENCIA_CBU"],
+    nombre_organizador: "Polka Produce",
     instagram: "@organizador_ok",
     tiktok: "https://www.tiktok.com/@organizador_ok",
   };
@@ -110,6 +111,19 @@ describe("eventos.validator - create", () => {
       false,
     );
   });
+
+  it("falla cuando nombre_organizador es demasiado corto", () => {
+    const body = buildValidCreateBody();
+    body.nombre_organizador = "A";
+
+    const errors = validateCreateEvento(body, {
+      imagen: [mockImageFile("image/jpeg")],
+    });
+
+    expect(
+      errors.some((error) => error.campo === "nombre_organizador"),
+    ).toBe(true);
+  });
 });
 
 describe("eventos.validator - update", () => {
@@ -170,6 +184,18 @@ describe("eventos.validator - update", () => {
     );
 
     expect(errors).toEqual([]);
+  });
+
+  it("valida nombre_organizador en updates", () => {
+    const errors = validateUpdateEvento(
+      { nombre_organizador: "A" },
+      {},
+      current,
+    );
+
+    expect(
+      errors.some((error) => error.campo === "nombre_organizador"),
+    ).toBe(true);
   });
 });
 

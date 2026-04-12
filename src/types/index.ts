@@ -52,6 +52,7 @@ export interface CreateEventoDTO {
   medios_pago: MedioPago[];
   instagram?: string;
   tiktok?: string;
+  nombre_organizador?: string;
   idempotency_key?: string;
   // Solo es respetado cuando el caller tiene rol ADMIN. Permite que el admin
   // de alta un evento a nombre de un organizador existente (caso de onboarding
@@ -73,6 +74,7 @@ export interface UpdateEventoDTO {
   medios_pago?: MedioPago[];
   instagram?: string;
   tiktok?: string;
+  nombre_organizador?: string;
   visible_en_app?: boolean;
   remove_flyer?: boolean;
 }
