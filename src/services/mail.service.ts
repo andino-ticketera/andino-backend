@@ -473,7 +473,6 @@ export async function sendPurchaseConfirmationEmail(
 
   const purchaseDetailsHtml = [
     ["Evento", compra.evento_titulo],
-    ["Fecha del evento", formatDate(compra.fecha_evento)],
     ["Lugar", compra.locacion],
     ["Dirección", compra.direccion],
     ["Compra realizada", formatDate(compra.created_at)],
@@ -499,30 +498,6 @@ export async function sendPurchaseConfirmationEmail(
     )
     .join("");
 
-  const entradasHtml = entradas.length
-    ? `
-        <tr>
-          <td style="padding:22px;border-radius:20px;background:#2a1342;border:1px solid #3a2a5a;">
-            <div style="font-size:12px;text-transform:uppercase;letter-spacing:1.2px;color:#5cff9d;font-weight:800;">Entradas emitidas</div>
-            <div style="margin-top:14px;font-size:15px;line-height:1.7;color:#e2dcf0;">
-              Guardá este email o abrí la confirmación web cuando necesites volver a verla.
-            </div>
-            <div style="margin-top:16px;">
-              ${entradas
-                .map(
-                  (entrada) => `
-                    <span style="display:inline-block;margin:0 8px 8px 0;padding:10px 14px;border-radius:999px;background:#3b2161;border:1px solid #3a2a5a;color:#ffffff;font-size:13px;font-weight:800;">
-                      Entrada ${entrada.numero_entrada}
-                    </span>
-                  `,
-                )
-                .join("")}
-            </div>
-          </td>
-        </tr>
-      `
-    : "";
-
   const html = buildEmailLayout({
     pretitle: "Compra confirmada",
     title: `Tus entradas para ${compra.evento_titulo}`,
@@ -534,9 +509,6 @@ export async function sendPurchaseConfirmationEmail(
             <div style="font-size:12px;text-transform:uppercase;letter-spacing:1.2px;color:#5cff9d;font-weight:800;">Compra acreditada</div>
             <div style="margin-top:12px;font-size:28px;line-height:1.25;color:#ffffff;font-weight:800;">
               ${escapeHtml(compra.evento_titulo)}
-            </div>
-            <div style="margin-top:10px;font-size:15px;line-height:1.75;color:#5cff9d;font-weight:800;">
-              Fecha del evento: ${escapeHtml(formatDate(compra.fecha_evento))}
             </div>
             <div style="margin-top:12px;font-size:15px;line-height:1.75;color:#e2dcf0;">
               ${entradas.length === 1 ? "Tu entrada ya está lista." : "Tus entradas ya están listas."}
@@ -553,7 +525,6 @@ export async function sendPurchaseConfirmationEmail(
             </table>
           </td>
         </tr>
-        ${entradasHtml}
       </table>
     `,
     footerHtml:
@@ -563,7 +534,6 @@ export async function sendPurchaseConfirmationEmail(
   const text = [
     `Compra confirmada - ${compra.evento_titulo}`,
     `Evento: ${compra.evento_titulo}`,
-    `Fecha del evento: ${formatDate(compra.fecha_evento)}`,
     `Lugar: ${compra.locacion}`,
     `Direccion: ${compra.direccion}`,
     `Compra realizada: ${formatDate(compra.created_at)}`,
@@ -571,8 +541,6 @@ export async function sendPurchaseConfirmationEmail(
     `Entradas: ${entradas.length}`,
     `Total: ${formatMoney(Number.parseFloat(compra.precio_total))}`,
     `Confirmacion: ${compraUrl}`,
-    "",
-    ...entradas.map((entrada) => `Entrada ${entrada.numero_entrada}`),
   ]
     .filter(Boolean)
     .join("\n");
