@@ -3,6 +3,7 @@ import type { NextFunction, Request, Response } from "express";
 import { requireAuth, requireRole } from "../middlewares/auth.js";
 import { AppError } from "../utils/errors.js";
 import * as comprasService from "../services/compras.service.js";
+import * as mailService from "../services/mail.service.js";
 
 const router = Router();
 
@@ -124,6 +125,48 @@ router.patch(
       next(err);
     }
   },
+);
+
+async function handleResendPurchaseEmail(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    const compraId = String(req.params.id || "").trim();
+    if (!isValidUUID(compraId)) {
+      next(new AppError(400, "ID_INVALIDO", "ID de compra invalido"));
+      return;
+    }
+
+    await comprasService.assertCompraEmailResendAllowed(req.user!, compraId);
+    await mailService.sendPurchaseConfirmationEmail(compraId, {
+      failIfDisabled: true,
+    });
+
+    res.json({
+      data: {
+        compraId,
+        mensaje: "Email reenviado correctamente",
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+router.post(
+  "/admin/:id/resend-email",
+  requireAuth,
+  requireRole(["ADMIN"]),
+  handleResendPurchaseEmail,
+);
+
+router.post(
+  "/organizador/:id/resend-email",
+  requireAuth,
+  requireRole(["ORGANIZADOR", "ADMIN"]),
+  handleResendPurchaseEmail,
 );
 
 router.get(

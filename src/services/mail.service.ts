@@ -425,8 +425,17 @@ async function loadPurchaseEmailPayload(compraId: string): Promise<{
 
 export async function sendPurchaseConfirmationEmail(
   compraId: string,
+  options?: { failIfDisabled?: boolean },
 ): Promise<void> {
   if (!resendClient) {
+    if (options?.failIfDisabled) {
+      throw new AppError(
+        503,
+        "EMAIL_NO_CONFIGURADO",
+        "El servicio de email no esta configurado",
+      );
+    }
+
     logger.warn(
       "Email de compra omitido por falta de configuracion de Resend",
       {

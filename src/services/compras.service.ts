@@ -78,6 +78,14 @@ interface CompraOwnerRow {
   creador_id: string;
 }
 
+interface CompraEmailResendRow {
+  id: string;
+  estado: EstadoCompra;
+  comprador_email: string | null;
+  fecha_evento: Date;
+  creador_id: string;
+}
+
 function toNumber(value: string): number {
   return Number.parseFloat(value);
 }
@@ -498,6 +506,62 @@ function buildEntradaNoDisponibleError(compraEstado: EstadoCompra): AppError {
     "ENTRADA_NO_DISPONIBLE",
     "Esta entrada no esta disponible porque la compra fue cancelada",
   );
+}
+
+export async function assertCompraEmailResendAllowed(
+  authUser: AuthUser,
+  compraId: string,
+): Promise<void> {
+  const result = await query<CompraEmailResendRow>(
+    `SELECT
+      c.id,
+      c.estado,
+      c.comprador_email,
+      e.fecha_evento,
+      e.creador_id
+    FROM compras c
+    INNER JOIN eventos e ON e.id = c.evento_id
+    WHERE c.id = $1
+    LIMIT 1`,
+    [compraId],
+  );
+
+  const compra = result.rows[0];
+  if (!compra) {
+    throw new AppError(404, "COMPRA_NO_ENCONTRADA", "Compra no encontrada");
+  }
+
+  if (authUser.role === "ORGANIZADOR" && compra.creador_id !== authUser.id) {
+    throw new AppError(
+      403,
+      "SIN_PERMISOS",
+      "No tiene permisos para reenviar el email de esta compra",
+    );
+  }
+
+  if (compra.estado !== "PAGADO") {
+    throw new AppError(
+      409,
+      "COMPRA_NO_HABILITADA",
+      "Solo se puede reenviar el email de compras pagadas",
+    );
+  }
+
+  if (!compra.comprador_email?.trim()) {
+    throw new AppError(
+      409,
+      "COMPRA_SIN_EMAIL",
+      "La compra no tiene un email valido para reenviar",
+    );
+  }
+
+  if (compra.fecha_evento.getTime() <= Date.now()) {
+    throw new AppError(
+      409,
+      "COMPRA_NO_VIGENTE",
+      "Solo se puede reenviar el email de compras vigentes",
+    );
+  }
 }
 
 export async function getEntradaDetalleByUser(
