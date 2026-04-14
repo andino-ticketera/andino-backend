@@ -8,8 +8,6 @@ import {
   normalizeEmail,
   normalizeFullName,
 } from "../validators/auth.validator.js";
-import { getPublicUserById } from "./auth.service.js";
-import { buildTicketAssets } from "./ticket-assets.service.js";
 
 interface ContactMessageInput {
   nombre: string;
@@ -39,8 +37,6 @@ interface PurchaseEmailRow {
   fecha_evento: Date;
   locacion: string;
   direccion: string;
-  creador_id: string;
-  nombre_organizador: string | null;
 }
 
 interface PurchaseEntryRow {
@@ -360,7 +356,6 @@ export async function sendOrganizerLeadEmail(
 async function loadPurchaseEmailPayload(compraId: string): Promise<{
   compra: PurchaseEmailRow;
   entradas: PurchaseEntryRow[];
-  organizador: string;
 }> {
   let compraResult;
   try {
@@ -376,9 +371,7 @@ async function loadPurchaseEmailPayload(compraId: string): Promise<{
       e.titulo AS evento_titulo,
       e.fecha_evento,
       e.locacion,
-      e.direccion,
-      e.creador_id,
-      e.nombre_organizador
+      e.direccion
     FROM compras c
     INNER JOIN eventos e ON e.id = c.evento_id
     WHERE c.id = $1 AND c.estado = 'PAGADO'
@@ -402,9 +395,7 @@ async function loadPurchaseEmailPayload(compraId: string): Promise<{
         e.titulo AS evento_titulo,
         e.fecha_evento,
         e.locacion,
-        e.direccion,
-        e.creador_id,
-        NULL::text AS nombre_organizador
+        e.direccion
       FROM compras c
       INNER JOIN eventos e ON e.id = c.evento_id
       WHERE c.id = $1 AND c.estado = 'PAGADO'
@@ -426,17 +417,9 @@ async function loadPurchaseEmailPayload(compraId: string): Promise<{
     [compraId],
   );
 
-  const organizadorFallback = compra.nombre_organizador?.trim()
-    ? null
-    : await getPublicUserById(compra.creador_id);
-
   return {
     compra,
     entradas: entradasResult.rows,
-    organizador:
-      compra.nombre_organizador?.trim() ||
-      organizadorFallback?.nombreCompleto ||
-      "Andino Tickets",
   };
 }
 
@@ -455,8 +438,7 @@ export async function sendPurchaseConfirmationEmail(
 
   const resend = resendClient;
 
-  const { compra, entradas, organizador } =
-    await loadPurchaseEmailPayload(compraId);
+  const { compra, entradas } = await loadPurchaseEmailPayload(compraId);
   const buyerEmail = compra.comprador_email;
 
   if (!buyerEmail) {
@@ -479,57 +461,22 @@ export async function sendPurchaseConfirmationEmail(
     ? `${baseFrontendUrl}/usuario/compras/${compra.id}`
     : `${baseFrontendUrl}/checkout/estado?compra=${encodeURIComponent(compra.id)}`;
 
-  // URL que codificamos DENTRO del QR: siempre la pagina publica de status,
-  // asi cuando alguien escanea el QR con el celular se abre directamente la
-  // confirmacion de la compra sin requerir sesion. El check-in del
-  // organizador sigue funcionando porque usa compraId (no el contenido del
-  // QR) via PATCH /api/compras/organizador/:id/checkin.
-  const qrTargetUrl = `${baseFrontendUrl}/checkout/estado?compra=${encodeURIComponent(compra.id)}`;
-
-  const ticketAssets = await Promise.all(
-    entradas.map(async (entrada) => ({
-      entrada,
-      assets: await buildTicketAssets({
-        entradaId: entrada.id,
-        eventoTitulo: compra.evento_titulo,
-        fechaEvento: compra.fecha_evento.toISOString(),
-        locacion: compra.locacion,
-        direccion: compra.direccion,
-        organizador,
-        compradorNombre,
-        qrData: qrTargetUrl,
-      }),
-    })),
-  );
-
-  const entradasHtml = ticketAssets
-    .map(({ entrada, assets }) => {
-      // QR en fondo blanco con borde suave para que sea escaneable en dark mode
-      // del cliente de correo si por alguna razon llega a invertirse.
-      const qrPreview = assets.qrImageUrl
-        ? `<div style="margin-top:16px;text-align:center;"><img src="${escapeHtml(assets.qrImageUrl)}" alt="QR entrada ${entrada.numero_entrada}" width="180" height="180" style="display:block;margin:0 auto;border:1px solid #e5e7eb;border-radius:12px;background:#ffffff;padding:10px;max-width:100%;height:auto;" /></div>`
-        : "";
-      // Fallback "Abrir QR": util cuando el cliente de correo bloquea imagenes
-      // inline (Outlook, Apple Mail con remitente no confiable, etc.) y el
-      // usuario no puede ver/escanear el QR embebido. Sin este link no habria
-      // forma de recuperarlo desde el propio email.
-      const openQrLink = assets.qrImageUrl
-        ? `<div style="text-align:center;"><a href="${escapeHtml(assets.qrImageUrl)}" style="display:inline-block;margin-top:14px;padding:11px 18px;border-radius:999px;background:#ffffff;border:1px solid #10b981;color:#047857;text-decoration:none;font-weight:700;font-size:14px;">Abrir QR</a></div>`
-        : "";
-
-      return `
+  const entradasHtml = entradas
+    .map(
+      (entrada) => `
         <tr>
           <td style="padding:20px;border-radius:14px;background:#f9fafb;border:1px solid #e5e7eb;">
             <div style="font-size:11px;text-transform:uppercase;letter-spacing:1.2px;color:#059669;font-weight:800;">Entrada ${entrada.numero_entrada}</div>
             <div style="margin-top:8px;font-size:15px;line-height:1.6;color:#111827;font-weight:600;">
               ${escapeHtml(compra.evento_titulo)}
             </div>
-            ${qrPreview}
-            ${openQrLink}
+            <div style="margin-top:10px;font-size:14px;line-height:1.7;color:#4b5563;">
+              Tu compra ya está confirmada. Usá el botón principal de este mail para ver el detalle completo.
+            </div>
           </td>
         </tr>
-      `;
-    })
+      `,
+    )
     .join("");
 
   const html = buildEmailLayout({
@@ -548,14 +495,14 @@ export async function sendPurchaseConfirmationEmail(
               <strong style="color:#374151;">Direccion:</strong> ${escapeHtml(compra.direccion)}<br />
               <strong style="color:#374151;">Total:</strong> ${escapeHtml(formatMoney(Number.parseFloat(compra.precio_total)))}
             </div>
-            <a href="${escapeHtml(compraUrl)}" style="display:inline-block;margin-top:18px;padding:12px 20px;border-radius:999px;background:#10b981;color:#ffffff;text-decoration:none;font-weight:800;font-size:14px;">Ver detalle de compra</a>
+            <a href="${escapeHtml(compraUrl)}" style="display:inline-block;margin-top:18px;padding:12px 20px;border-radius:999px;background:#10b981;color:#ffffff;text-decoration:none;font-weight:800;font-size:14px;">Ver confirmacion de compra</a>
           </td>
         </tr>
         ${entradasHtml}
       </table>
     `,
     footerHtml:
-      "Si no ves el QR embebido en tu correo, podes abrirlo o descargar el PDF desde los botones de cada entrada.<br />Andino Tickets",
+      "Este email confirma tu compra. Si necesitás revisarla de nuevo, usá el botón para abrir la confirmación en la web.<br />Andino Tickets",
   });
 
   const text = [
@@ -565,14 +512,9 @@ export async function sendPurchaseConfirmationEmail(
     `Lugar: ${compra.locacion}`,
     `Direccion: ${compra.direccion}`,
     `Total: ${formatMoney(Number.parseFloat(compra.precio_total))}`,
-    `Detalle: ${compraUrl}`,
+    `Confirmacion: ${compraUrl}`,
     "",
-    ...ticketAssets.flatMap(({ entrada, assets }) => [
-      `Entrada ${entrada.numero_entrada}`,
-      assets.qrPdfUrl ? `PDF: ${assets.qrPdfUrl}` : "",
-      assets.qrImageUrl ? `QR: ${assets.qrImageUrl}` : "",
-      "",
-    ]),
+    ...entradas.map((entrada) => `Entrada ${entrada.numero_entrada}`),
   ]
     .filter(Boolean)
     .join("\n");
