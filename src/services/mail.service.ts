@@ -61,6 +61,7 @@ interface ValidatedOrganizerLead {
 }
 
 const resendClient = env.resendApiKey ? new Resend(env.resendApiKey) : null;
+const ARG_TIMEZONE = "America/Argentina/Buenos_Aires";
 
 function isOrganizerNameColumnMissing(error: unknown): boolean {
   return isMissingColumnError(error, "nombre_organizador");
@@ -121,8 +122,10 @@ function formatMoney(value: number): string {
 
 function formatDate(value: Date): string {
   return new Intl.DateTimeFormat("es-AR", {
+    timeZone: ARG_TIMEZONE,
     dateStyle: "full",
     timeStyle: "short",
+    hour12: false,
   }).format(value);
 }
 
@@ -213,9 +216,6 @@ function buildEmailLayout(input: {
   bodyHtml: string;
   footerHtml?: string;
 }): string {
-  // Nota: forzamos light mode con color-scheme/supported-color-schemes para que
-  // Gmail/Apple Mail/Outlook no aplique auto-dark invert sobre el layout, que
-  // antes rompia el header con gradiente oscuro y lo dejaba ilegible.
   return `
     <!doctype html>
     <html lang="es">
@@ -226,23 +226,26 @@ function buildEmailLayout(input: {
         <meta name="supported-color-schemes" content="light" />
         <title>${escapeHtml(input.title)}</title>
       </head>
-      <body style="margin:0;padding:0;background:#f3f4f6;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;color:#111827;-webkit-font-smoothing:antialiased;">
-        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f3f4f6;padding:24px 12px;">
+      <body style="margin:0;padding:0;background:#1e0d33;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;color:#ffffff;-webkit-font-smoothing:antialiased;">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#1e0d33;padding:24px 12px;">
           <tr>
             <td align="center">
-              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;background:#ffffff;border:1px solid #e5e7eb;border-radius:16px;overflow:hidden;box-shadow:0 1px 3px rgba(17,24,39,0.06);">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:640px;background:#331a52;border:1px solid #3a2a5a;border-radius:24px;overflow:hidden;box-shadow:0 14px 42px rgba(0,0,0,0.28);">
                 <tr>
-                  <td style="padding:28px 28px 22px;background:#ffffff;border-bottom:1px solid #e5e7eb;">
-                    <div style="font-size:12px;letter-spacing:1.4px;text-transform:uppercase;font-weight:800;color:#059669;">${escapeHtml(input.pretitle)}</div>
-                    <h1 style="margin:10px 0 8px;font-size:26px;line-height:1.2;color:#111827;font-weight:800;">${escapeHtml(input.title)}</h1>
-                    <p style="margin:0;font-size:15px;line-height:1.6;color:#4b5563;">${escapeHtml(input.intro)}</p>
+                  <td style="height:8px;background:#ff4fdc;font-size:0;line-height:0;">&nbsp;</td>
+                </tr>
+                <tr>
+                  <td style="padding:30px 28px 24px;background:#2a1342;border-bottom:1px solid #3a2a5a;">
+                    <div style="display:inline-block;padding:8px 14px;border-radius:999px;background:#3b2161;border:1px solid #5cff9d;color:#5cff9d;font-size:12px;letter-spacing:1.4px;text-transform:uppercase;font-weight:800;">${escapeHtml(input.pretitle)}</div>
+                    <h1 style="margin:16px 0 10px;font-size:30px;line-height:1.18;color:#ffffff;font-weight:800;">${escapeHtml(input.title)}</h1>
+                    <p style="margin:0;font-size:15px;line-height:1.75;color:#e2dcf0;">${escapeHtml(input.intro)}</p>
                   </td>
                 </tr>
                 <tr>
-                  <td style="padding:24px;background:#ffffff;">${input.bodyHtml}</td>
+                  <td style="padding:24px;background:#331a52;">${input.bodyHtml}</td>
                 </tr>
                 <tr>
-                  <td style="padding:0 24px 24px;background:#ffffff;font-size:12px;line-height:1.6;color:#6b7280;">
+                  <td style="padding:0 24px 24px;background:#331a52;font-size:12px;line-height:1.75;color:#b0a3c7;">
                     ${input.footerHtml || "Andino Tickets"}
                   </td>
                 </tr>
@@ -464,62 +467,108 @@ export async function sendPurchaseConfirmationEmail(
       .trim() || "Comprador";
 
   const baseFrontendUrl = env.frontendUrl.replace(/\/$/, "");
-  // URL del boton "Ver detalle de compra": mandamos al usuario logueado a su
-  // panel privado y a los guest al status publico.
   const compraUrl = compra.user_id
     ? `${baseFrontendUrl}/usuario/compras/${compra.id}`
     : `${baseFrontendUrl}/checkout/estado?compra=${encodeURIComponent(compra.id)}`;
 
-  const entradasHtml = entradas
+  const purchaseDetailsHtml = [
+    ["Evento", compra.evento_titulo],
+    ["Fecha del evento", formatDate(compra.fecha_evento)],
+    ["Lugar", compra.locacion],
+    ["Dirección", compra.direccion],
+    ["Compra realizada", formatDate(compra.created_at)],
+    ["Comprador", buyerEmail],
+    [
+      "Entradas",
+      `${entradas.length} ${entradas.length === 1 ? "entrada" : "entradas"}`,
+    ],
+    ["Total", formatMoney(Number.parseFloat(compra.precio_total))],
+  ]
+    .filter(([, value]) => Boolean(String(value || "").trim()))
     .map(
-      (entrada) => `
+      ([label, value]) => `
         <tr>
-          <td style="padding:20px;border-radius:14px;background:#f9fafb;border:1px solid #e5e7eb;">
-            <div style="font-size:11px;text-transform:uppercase;letter-spacing:1.2px;color:#059669;font-weight:800;">Entrada ${entrada.numero_entrada}</div>
-            <div style="margin-top:8px;font-size:15px;line-height:1.6;color:#111827;font-weight:600;">
-              ${escapeHtml(compra.evento_titulo)}
-            </div>
-            <div style="margin-top:10px;font-size:14px;line-height:1.7;color:#4b5563;">
-              Tu compra ya está confirmada. Usá el botón principal de este mail para ver el detalle completo.
-            </div>
+          <td style="padding:10px 0;border-bottom:1px solid #4a2d72;font-size:13px;line-height:1.5;color:#b0a3c7;vertical-align:top;">
+            ${escapeHtml(label)}
+          </td>
+          <td style="padding:10px 0;border-bottom:1px solid #4a2d72;font-size:14px;line-height:1.7;color:#ffffff;font-weight:700;text-align:right;vertical-align:top;">
+            ${escapeHtml(value)}
           </td>
         </tr>
       `,
     )
     .join("");
 
+  const entradasHtml = entradas.length
+    ? `
+        <tr>
+          <td style="padding:22px;border-radius:20px;background:#2a1342;border:1px solid #3a2a5a;">
+            <div style="font-size:12px;text-transform:uppercase;letter-spacing:1.2px;color:#5cff9d;font-weight:800;">Entradas emitidas</div>
+            <div style="margin-top:14px;font-size:15px;line-height:1.7;color:#e2dcf0;">
+              Guardá este email o abrí la confirmación web cuando necesites volver a verla.
+            </div>
+            <div style="margin-top:16px;">
+              ${entradas
+                .map(
+                  (entrada) => `
+                    <span style="display:inline-block;margin:0 8px 8px 0;padding:10px 14px;border-radius:999px;background:#3b2161;border:1px solid #3a2a5a;color:#ffffff;font-size:13px;font-weight:800;">
+                      Entrada ${entrada.numero_entrada}
+                    </span>
+                  `,
+                )
+                .join("")}
+            </div>
+          </td>
+        </tr>
+      `
+    : "";
+
   const html = buildEmailLayout({
     pretitle: "Compra confirmada",
     title: `Tus entradas para ${compra.evento_titulo}`,
-    intro: `Hola ${escapeHtml(compradorNombre)}, tu pago fue acreditado y ya emitimos ${entradas.length === 1 ? "tu entrada" : "tus entradas"}.`,
+    intro: `Hola ${compradorNombre}, tu pago fue acreditado y ya emitimos ${entradas.length === 1 ? "tu entrada" : "tus entradas"}.`,
     bodyHtml: `
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:separate;border-spacing:0 14px;">
         <tr>
-          <td style="padding:20px;border-radius:14px;background:#f9fafb;border:1px solid #e5e7eb;">
-            <div style="font-size:11px;text-transform:uppercase;letter-spacing:1.2px;color:#059669;font-weight:800;">Resumen de compra</div>
-            <div style="margin-top:12px;font-size:15px;line-height:1.85;color:#111827;">
-              <strong style="color:#374151;">Evento:</strong> ${escapeHtml(compra.evento_titulo)}<br />
-              <strong style="color:#374151;">Fecha:</strong> ${escapeHtml(formatDate(compra.fecha_evento))}<br />
-              <strong style="color:#374151;">Lugar:</strong> ${escapeHtml(compra.locacion)}<br />
-              <strong style="color:#374151;">Direccion:</strong> ${escapeHtml(compra.direccion)}<br />
-              <strong style="color:#374151;">Total:</strong> ${escapeHtml(formatMoney(Number.parseFloat(compra.precio_total)))}
+          <td style="padding:24px;border-radius:20px;background:#2a1342;border:1px solid #3a2a5a;">
+            <div style="font-size:12px;text-transform:uppercase;letter-spacing:1.2px;color:#5cff9d;font-weight:800;">Compra acreditada</div>
+            <div style="margin-top:12px;font-size:28px;line-height:1.25;color:#ffffff;font-weight:800;">
+              ${escapeHtml(compra.evento_titulo)}
             </div>
-            <a href="${escapeHtml(compraUrl)}" style="display:inline-block;margin-top:18px;padding:12px 20px;border-radius:999px;background:#10b981;color:#ffffff;text-decoration:none;font-weight:800;font-size:14px;">Ver confirmacion de compra</a>
+            <div style="margin-top:10px;font-size:15px;line-height:1.75;color:#5cff9d;font-weight:800;">
+              Fecha del evento: ${escapeHtml(formatDate(compra.fecha_evento))}
+            </div>
+            <div style="margin-top:12px;font-size:15px;line-height:1.75;color:#e2dcf0;">
+              ${entradas.length === 1 ? "Tu entrada ya está lista." : "Tus entradas ya están listas."}
+              Abrí la confirmación desde la web para descargarla o revisarla cuando quieras.
+            </div>
+            <a href="${escapeHtml(compraUrl)}" style="display:inline-block;margin-top:18px;padding:13px 20px;border-radius:999px;background:#5cff9d;color:#04110d;text-decoration:none;font-weight:800;font-size:14px;">Ver confirmación de compra</a>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:22px;border-radius:20px;background:#3b2161;border:1px solid #3a2a5a;">
+            <div style="font-size:12px;text-transform:uppercase;letter-spacing:1.2px;color:#5cff9d;font-weight:800;">Detalle de compra</div>
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:12px;border-collapse:collapse;">
+              ${purchaseDetailsHtml}
+            </table>
           </td>
         </tr>
         ${entradasHtml}
       </table>
     `,
     footerHtml:
-      "Este email confirma tu compra. Si necesitás revisarla de nuevo, usá el botón para abrir la confirmación en la web.<br />Andino Tickets",
+      "Este email confirma tu compra y mantiene el acceso directo a la confirmación en la web.<br />Andino Tickets",
   });
 
   const text = [
     `Compra confirmada - ${compra.evento_titulo}`,
     `Evento: ${compra.evento_titulo}`,
-    `Fecha: ${formatDate(compra.fecha_evento)}`,
+    `Fecha del evento: ${formatDate(compra.fecha_evento)}`,
     `Lugar: ${compra.locacion}`,
     `Direccion: ${compra.direccion}`,
+    `Compra realizada: ${formatDate(compra.created_at)}`,
+    `Comprador: ${buyerEmail}`,
+    `Entradas: ${entradas.length}`,
     `Total: ${formatMoney(Number.parseFloat(compra.precio_total))}`,
     `Confirmacion: ${compraUrl}`,
     "",

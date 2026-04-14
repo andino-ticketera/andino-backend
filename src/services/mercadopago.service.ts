@@ -65,6 +65,7 @@ interface PublicCheckoutStatusRow {
   comprador_email: string | null;
   created_at: Date;
   evento_titulo: string;
+  fecha_evento: Date;
 }
 
 interface MercadoPagoOAuthTokenResponse {
@@ -818,7 +819,8 @@ export async function getPublicCheckoutStatus(
       c.precio_total,
       c.comprador_email,
       c.created_at,
-      e.titulo AS evento_titulo
+      e.titulo AS evento_titulo,
+      e.fecha_evento
     FROM compras c
     INNER JOIN eventos e ON e.id = c.evento_id
     WHERE c.id = $1
@@ -836,6 +838,7 @@ export async function getPublicCheckoutStatus(
     estado: compra.estado,
     mpStatus: compra.mp_status,
     eventoTitulo: compra.evento_titulo,
+    eventDate: compra.fecha_evento.toISOString(),
     cantidad: compra.cantidad,
     total: Number.parseFloat(compra.precio_total),
     compradorEmail: maskEmail(compra.comprador_email || ""),
