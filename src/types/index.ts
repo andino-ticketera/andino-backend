@@ -77,6 +77,7 @@ export interface UpdateEventoDTO {
   nombre_organizador?: string;
   visible_en_app?: boolean;
   remove_flyer?: boolean;
+  use_flyer_as_imagen?: boolean;
 }
 
 export interface AuthUser {

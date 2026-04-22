@@ -329,6 +329,7 @@ export function validateUpdateEvento(
     "nombre_organizador",
     "visible_en_app",
     "remove_flyer",
+    "use_flyer_as_imagen",
   ];
 
   const hasFields = editableFields.some((f) => body[f] !== undefined);
@@ -508,6 +509,16 @@ export function validateUpdateEvento(
       errors.push({
         campo: "remove_flyer",
         mensaje: "remove_flyer debe ser true o false",
+      });
+    }
+  }
+
+  if (body.use_flyer_as_imagen !== undefined) {
+    const useFlyerAsImagen = String(body.use_flyer_as_imagen).trim().toLowerCase();
+    if (useFlyerAsImagen !== "true" && useFlyerAsImagen !== "false") {
+      errors.push({
+        campo: "use_flyer_as_imagen",
+        mensaje: "use_flyer_as_imagen debe ser true o false",
       });
     }
   }

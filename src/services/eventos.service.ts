@@ -234,7 +234,11 @@ function buildEventoUpdateMutation(
   evento: EventoRow,
   imagenUrl?: string,
   flyerUrl?: string,
-  options?: { removeFlyer?: boolean; includeOrganizerName?: boolean },
+  options?: {
+    removeFlyer?: boolean;
+    useFlyerAsImagen?: boolean;
+    includeOrganizerName?: boolean;
+  },
 ): { setClauses: string[]; params: unknown[] } {
   const includeOrganizerName = options?.includeOrganizerName !== false;
   const setClauses: string[] = [];
@@ -293,6 +297,13 @@ function buildEventoUpdateMutation(
     setClauses.push(`imagen_url = $${paramIndex}`);
     params.push(imagenUrl);
     paramIndex++;
+  } else if (options?.useFlyerAsImagen) {
+    const effectiveFlyerUrl = flyerUrl ?? evento.flyer_url;
+    if (effectiveFlyerUrl) {
+      setClauses.push(`imagen_url = $${paramIndex}`);
+      params.push(effectiveFlyerUrl);
+      paramIndex++;
+    }
   }
 
   if (flyerUrl) {
@@ -713,7 +724,7 @@ export async function updateEvento(
   dto: UpdateEventoDTO,
   imagenUrl?: string,
   flyerUrl?: string,
-  options?: { removeFlyer?: boolean },
+  options?: { removeFlyer?: boolean; useFlyerAsImagen?: boolean },
 ): Promise<Evento> {
   // Buscar evento actual (incluyendo CANCELADO para dar 404 correcto)
   const current = await query<EventoRow>(

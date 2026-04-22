@@ -370,6 +370,10 @@ router.put(
         String(req.body.remove_flyer || "")
           .trim()
           .toLowerCase() === "true" && !files?.flyer?.[0];
+      const useFlyerAsImagen =
+        String(req.body.use_flyer_as_imagen || "")
+          .trim()
+          .toLowerCase() === "true" && !files?.imagen?.[0];
 
       const effectiveMediosPago =
         req.body.medios_pago !== undefined
@@ -387,7 +391,7 @@ router.put(
         req.body,
         imagenUrl,
         flyerUrl,
-        { removeFlyer },
+        { removeFlyer, useFlyerAsImagen },
       );
 
       await Promise.all([
