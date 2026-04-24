@@ -252,6 +252,7 @@ describe("mercadopago.service", () => {
 
   it("expone estado publico de checkout para compras invitadas", async () => {
     const createdAt = new Date("2026-04-05T18:00:00.000Z");
+    const eventDate = new Date("2026-04-20T01:30:00.000Z");
     mocks.queryMock.mockResolvedValueOnce({
       rows: [
         {
@@ -263,6 +264,7 @@ describe("mercadopago.service", () => {
           comprador_email: "ana@example.com",
           created_at: createdAt,
           evento_titulo: "Festival Andino",
+          fecha_evento: eventDate,
         },
       ],
     });
@@ -274,6 +276,7 @@ describe("mercadopago.service", () => {
       estado: "PENDIENTE",
       mpStatus: "pending",
       eventoTitulo: "Festival Andino",
+      eventDate: eventDate.toISOString(),
       cantidad: 2,
       total: 21000,
       compradorEmail: "ana***@example.com",

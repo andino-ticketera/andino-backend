@@ -17,7 +17,6 @@ function dataUrlToBuffer(dataUrl: string): Buffer {
 }
 
 async function buildTicketPdf(input: {
-  qrImageBuffer: Buffer;
   entradaId: string;
   eventoTitulo: string;
   fechaEvento: string;
@@ -30,7 +29,6 @@ async function buildTicketPdf(input: {
   const page = pdf.addPage([595, 842]);
   const fontBold = await pdf.embedFont(StandardFonts.HelveticaBold);
   const fontRegular = await pdf.embedFont(StandardFonts.Helvetica);
-  const qrImage = await pdf.embedPng(input.qrImageBuffer);
 
   page.drawRectangle({
     x: 36,
@@ -81,23 +79,46 @@ async function buildTicketPdf(input: {
     currentY -= 28;
   }
 
-  page.drawImage(qrImage, {
-    x: 365,
-    y: 515,
-    width: 160,
-    height: 160,
+  page.drawRectangle({
+    x: 345,
+    y: 505,
+    width: 180,
+    height: 170,
+    color: rgb(0.96, 0.96, 0.96),
+    borderColor: rgb(0.82, 0.82, 0.82),
+    borderWidth: 1,
   });
 
-  page.drawText("Presenta este QR al ingresar", {
-    x: 340,
-    y: 485,
-    size: 12,
+  page.drawText("Entrada valida", {
+    x: 390,
+    y: 635,
+    size: 18,
     font: fontBold,
     color: rgb(0.12, 0.12, 0.12),
   });
 
+  page.drawText("Presenta esta entrada al ingresar.", {
+    x: 366,
+    y: 595,
+    size: 11,
+    font: fontRegular,
+    color: rgb(0.22, 0.22, 0.22),
+    maxWidth: 138,
+    lineHeight: 16,
+  });
+
+  page.drawText("Conservala disponible hasta finalizar el evento.", {
+    x: 366,
+    y: 548,
+    size: 11,
+    font: fontRegular,
+    color: rgb(0.22, 0.22, 0.22),
+    maxWidth: 138,
+    lineHeight: 16,
+  });
+
   page.drawText(
-    "Documento generado automaticamente. No compartas el QR en canales publicos.",
+    "Documento generado automaticamente. No compartas esta entrada en canales publicos.",
     {
       x: 56,
       y: 80,
@@ -133,7 +154,6 @@ export async function buildTicketAssets(input: {
 
   const qrImageBuffer = dataUrlToBuffer(qrImageDataUrl);
   const qrPdfBuffer = await buildTicketPdf({
-    qrImageBuffer,
     entradaId: input.entradaId,
     eventoTitulo: input.eventoTitulo,
     fechaEvento: input.fechaEvento,

@@ -642,11 +642,10 @@ export async function getEntradaDetalleByUser(
     row.nombre_organizador?.trim() ||
     organizer?.nombreCompleto ||
     "Organizador";
-  // URL publica que codificamos dentro del QR. Cuando alguien escanea el QR
-  // con el celular se abre directamente la pagina de confirmacion de la
-  // compra sin requerir sesion. El check-in del organizador sigue usando
-  // el compraId via PATCH /api/compras/organizador/:id/checkin, asi que no
-  // depende del contenido del QR.
+  // URL publica asociada a la entrada. Al abrirla desde el celular se muestra
+  // la pagina de confirmacion de la compra sin requerir sesion. El check-in
+  // del organizador sigue usando el compraId via
+  // PATCH /api/compras/organizador/:id/checkin, asi que no depende de esta URL.
   const qrTargetUrl = `${env.frontendUrl.replace(/\/$/, "")}/checkout/estado?compra=${encodeURIComponent(row.compra_id)}`;
   const ticketAssets = await buildTicketAssets({
     entradaId: row.id,

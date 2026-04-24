@@ -6,22 +6,29 @@ const mocks = vi.hoisted(() => {
   const listUsersMock = vi.fn();
   const getUserByIdMock = vi.fn();
   const updateUserByIdMock = vi.fn();
+  const deleteUserMock = vi.fn();
   const generateLinkMock = vi.fn();
+  const signUpMock = vi.fn();
   const resetPasswordForEmailMock = vi.fn();
   const sendPasswordRecoveryEmailMock = vi.fn();
+  const sendSignupConfirmationEmailMock = vi.fn();
 
   return {
     listUsersMock,
     getUserByIdMock,
     updateUserByIdMock,
+    deleteUserMock,
     generateLinkMock,
+    signUpMock,
     resetPasswordForEmailMock,
     sendPasswordRecoveryEmailMock,
+    sendSignupConfirmationEmailMock,
   };
 });
 
 vi.mock("../../src/services/mail.service.js", () => ({
   sendPasswordRecoveryEmail: mocks.sendPasswordRecoveryEmailMock,
+  sendSignupConfirmationEmail: mocks.sendSignupConfirmationEmailMock,
 }));
 
 vi.mock("../../src/services/supabase.client.js", () => ({
@@ -31,13 +38,14 @@ vi.mock("../../src/services/supabase.client.js", () => ({
         listUsers: mocks.listUsersMock,
         getUserById: mocks.getUserByIdMock,
         updateUserById: mocks.updateUserByIdMock,
+        deleteUser: mocks.deleteUserMock,
         generateLink: mocks.generateLinkMock,
       },
     },
   }),
   getSupabaseAnonClient: () => ({
     auth: {
-      signUp: vi.fn(),
+      signUp: mocks.signUpMock,
       signInWithPassword: vi.fn(),
       getUser: vi.fn(),
       resetPasswordForEmail: mocks.resetPasswordForEmailMock,
@@ -47,6 +55,7 @@ vi.mock("../../src/services/supabase.client.js", () => ({
 
 import {
   listRegisteredUsers,
+  registerUser,
   sendPasswordResetEmail,
   updateUserRole,
 } from "../../src/services/auth.service.js";
@@ -76,8 +85,20 @@ function buildSupabaseUser(input: {
 }
 
 describe("auth.service", () => {
+  const mutableEnv = env as {
+    resendApiKey: string;
+    resendFromEmail: string;
+    supabaseEmailConfirmRedirectTo: string;
+  };
+  const originalResendApiKey = env.resendApiKey;
+  const originalResendFromEmail = env.resendFromEmail;
+  const originalEmailConfirmRedirectTo = env.supabaseEmailConfirmRedirectTo;
+
   beforeEach(() => {
     vi.clearAllMocks();
+    mutableEnv.resendApiKey = originalResendApiKey;
+    mutableEnv.resendFromEmail = originalResendFromEmail;
+    mutableEnv.supabaseEmailConfirmRedirectTo = originalEmailConfirmRedirectTo;
   });
 
   it("lista usuarios registrados ordenados por fecha de alta descendente", async () => {
@@ -175,6 +196,132 @@ describe("auth.service", () => {
       id: "user-2",
       email: "organizador@example.com",
       rol: "ORGANIZADOR",
+    });
+  });
+
+  it("registra usuarios con mail de confirmacion branded usando generateLink signup", async () => {
+    mutableEnv.resendApiKey = "re_test_key";
+    mutableEnv.resendFromEmail = "hola@andinotickets.com";
+
+    mocks.generateLinkMock.mockResolvedValueOnce({
+      data: {
+        properties: {
+          action_link: "https://example.com/verify?token=signup123",
+        },
+        user: {
+          id: "signup-user-1",
+          email: "nuevo@example.com",
+          user_metadata: {
+            nombre_completo: "Nuevo Usuario",
+          },
+          app_metadata: {},
+        },
+      },
+      error: null,
+    });
+    mocks.updateUserByIdMock.mockResolvedValueOnce({ error: null });
+    mocks.getUserByIdMock.mockResolvedValueOnce({
+      data: {
+        user: buildSupabaseUser({
+          id: "signup-user-1",
+          email: "nuevo@example.com",
+          role: "USUARIO",
+          nombreCompleto: "Nuevo Usuario",
+        }),
+      },
+      error: null,
+    });
+    mocks.sendSignupConfirmationEmailMock.mockResolvedValueOnce(undefined);
+
+    const result = await registerUser({
+      nombreCompleto: "Nuevo Usuario",
+      email: "nuevo@example.com",
+      password: "secret123",
+    });
+
+    expect(mocks.generateLinkMock).toHaveBeenCalledWith({
+      type: "signup",
+      email: "nuevo@example.com",
+      password: "secret123",
+      options: {
+        redirectTo: env.supabaseEmailConfirmRedirectTo,
+        data: {
+          nombre_completo: "Nuevo Usuario",
+        },
+      },
+    });
+    expect(mocks.sendSignupConfirmationEmailMock).toHaveBeenCalledWith({
+      email: "nuevo@example.com",
+      confirmUrl: "https://example.com/verify?token=signup123",
+      fullName: "Nuevo Usuario",
+    });
+    expect(result).toMatchObject({
+      token: null,
+      requiresEmailVerification: true,
+      user: {
+        id: "signup-user-1",
+        email: "nuevo@example.com",
+        rol: "USUARIO",
+      },
+    });
+    expect(mocks.signUpMock).not.toHaveBeenCalled();
+  });
+
+  it("usa el flujo nativo de Supabase si el proveedor de email branded no esta configurado", async () => {
+    mutableEnv.resendApiKey = "";
+
+    mocks.signUpMock.mockResolvedValueOnce({
+      data: {
+        user: {
+          id: "signup-user-2",
+          email: "fallback@example.com",
+          user_metadata: {
+            nombre_completo: "Fallback User",
+          },
+          app_metadata: {},
+        },
+        session: null,
+      },
+      error: null,
+    });
+    mocks.updateUserByIdMock.mockResolvedValueOnce({ error: null });
+    mocks.getUserByIdMock.mockResolvedValueOnce({
+      data: {
+        user: buildSupabaseUser({
+          id: "signup-user-2",
+          email: "fallback@example.com",
+          role: "USUARIO",
+          nombreCompleto: "Fallback User",
+        }),
+      },
+      error: null,
+    });
+
+    const result = await registerUser({
+      nombreCompleto: "Fallback User",
+      email: "fallback@example.com",
+      password: "secret123",
+    });
+
+    expect(mocks.signUpMock).toHaveBeenCalledWith({
+      email: "fallback@example.com",
+      password: "secret123",
+      options: {
+        emailRedirectTo: env.supabaseEmailConfirmRedirectTo,
+        data: {
+          nombre_completo: "Fallback User",
+        },
+      },
+    });
+    expect(mocks.generateLinkMock).not.toHaveBeenCalled();
+    expect(mocks.sendSignupConfirmationEmailMock).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      token: null,
+      requiresEmailVerification: true,
+      user: {
+        id: "signup-user-2",
+        email: "fallback@example.com",
+      },
     });
   });
 

@@ -1,12 +1,14 @@
 import dotenv from "dotenv";
 dotenv.config();
 
+const frontendUrl = process.env.FRONTEND_URL || "https://andinotickets.com";
+
 export const env = {
   port: parseInt(process.env.PORT || "4000", 10),
   apiBasePath: process.env.API_BASE_PATH || "/api",
   databaseUrl:
     process.env.DATABASE_URL || "postgres://localhost:5432/andino_tickets",
-  frontendUrl: process.env.FRONTEND_URL || "https://andinotickets.com",
+  frontendUrl,
   backendPublicUrl:
     process.env.BACKEND_PUBLIC_URL ||
     process.env.PUBLIC_ASSET_BASE_URL ||
@@ -26,6 +28,9 @@ export const env = {
   supabaseUrl: process.env.SUPABASE_URL || "",
   supabaseAnonKey: process.env.SUPABASE_ANON_KEY || "",
   supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY || "",
+  supabaseEmailConfirmRedirectTo:
+    process.env.SUPABASE_EMAIL_CONFIRM_REDIRECT_TO ||
+    `${frontendUrl.replace(/\/$/, "")}/iniciar-sesion`,
   supabasePasswordResetRedirectTo:
     process.env.SUPABASE_PASSWORD_RESET_REDIRECT_TO ||
     "https://andinotickets.com/restablecer-clave",

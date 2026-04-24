@@ -13,7 +13,10 @@ import {
   getSupabaseAnonClient,
 } from "./supabase.client.js";
 import type { User } from "@supabase/supabase-js";
-import { sendPasswordRecoveryEmail as sendBrandedPasswordRecoveryEmail } from "./mail.service.js";
+import {
+  sendPasswordRecoveryEmail as sendBrandedPasswordRecoveryEmail,
+  sendSignupConfirmationEmail,
+} from "./mail.service.js";
 
 function resolveRole(user: User): RolUsuario {
   const fromAppRole = normalizeRole(user.app_metadata?.app_role);
@@ -145,6 +148,10 @@ function canFallbackToNativePasswordReset(error: unknown): boolean {
   );
 }
 
+function useBrandedEmailProvider(): boolean {
+  return Boolean(env.resendApiKey && env.resendFromEmail);
+}
+
 async function sendNativePasswordResetEmail(email: string): Promise<void> {
   const supabase = getSupabaseAnonClient();
 
@@ -166,18 +173,72 @@ async function sendNativePasswordResetEmail(email: string): Promise<void> {
   }
 }
 
-export async function registerUser(input: {
+async function assignInitialUserRole(
+  userId: string,
+  userMetadata: Record<string, unknown> | null | undefined,
+  nombreCompleto: string,
+): Promise<void> {
+  const admin = getSupabaseAdminClient();
+  const { error: updateRoleError } = await admin.auth.admin.updateUserById(
+    userId,
+    {
+      app_metadata: {
+        app_role: "USUARIO",
+      },
+      user_metadata: {
+        ...(userMetadata || {}),
+        nombre_completo: nombreCompleto,
+      },
+    },
+  );
+
+  if (updateRoleError) {
+    throw new AppError(
+      500,
+      "AUTH_ROLE_ASSIGN_ERROR",
+      "No se pudo asignar el rol inicial del usuario",
+    );
+  }
+}
+
+async function loadRegisteredUser(userId: string): Promise<UsuarioPublico> {
+  const admin = getSupabaseAdminClient();
+  const { data: refreshedUserData, error: refreshedUserError } =
+    await admin.auth.admin.getUserById(userId);
+
+  if (refreshedUserError || !refreshedUserData?.user) {
+    throw new AppError(
+      500,
+      "AUTH_INVALID_RESPONSE",
+      "No se pudo leer el usuario registrado",
+    );
+  }
+
+  return toUsuarioPublico(refreshedUserData.user);
+}
+
+async function deleteUserBestEffort(userId: string): Promise<void> {
+  const admin = getSupabaseAdminClient();
+
+  try {
+    await admin.auth.admin.deleteUser(userId);
+  } catch {
+    // Best effort cleanup for partially created signup users.
+  }
+}
+
+async function registerUserWithNativeEmail(input: {
   nombreCompleto: string;
   email: string;
   password: string;
 }): Promise<AuthResponse> {
   const supabase = getSupabaseAnonClient();
-  const admin = getSupabaseAdminClient();
 
   const { data, error } = await supabase.auth.signUp({
     email: input.email,
     password: input.password,
     options: {
+      emailRedirectTo: env.supabaseEmailConfirmRedirectTo,
       data: {
         nombre_completo: input.nombreCompleto,
       },
@@ -203,45 +264,97 @@ export async function registerUser(input: {
     );
   }
 
-  const { error: updateRoleError } = await admin.auth.admin.updateUserById(
+  await assignInitialUserRole(
     createdUser.id,
-    {
-      app_metadata: {
-        app_role: "USUARIO",
-      },
-      user_metadata: {
-        ...(createdUser.user_metadata || {}),
-        nombre_completo: input.nombreCompleto,
-      },
-    },
+    (createdUser.user_metadata as Record<string, unknown> | null | undefined) ||
+      null,
+    input.nombreCompleto,
   );
 
-  if (updateRoleError) {
-    throw new AppError(
-      500,
-      "AUTH_ROLE_ASSIGN_ERROR",
-      "No se pudo asignar el rol inicial del usuario",
-    );
-  }
-
-  const { data: refreshedUserData, error: refreshedUserError } =
-    await admin.auth.admin.getUserById(createdUser.id);
-
-  if (refreshedUserError || !refreshedUserData?.user) {
-    throw new AppError(
-      500,
-      "AUTH_INVALID_RESPONSE",
-      "No se pudo leer el usuario registrado",
-    );
-  }
-
-  const user = toUsuarioPublico(refreshedUserData.user);
+  const user = await loadRegisteredUser(createdUser.id);
   const token = data.session?.access_token || null;
 
   return {
     token,
     user,
     requiresEmailVerification: token === null,
+  };
+}
+
+export async function registerUser(input: {
+  nombreCompleto: string;
+  email: string;
+  password: string;
+}): Promise<AuthResponse> {
+  if (!useBrandedEmailProvider()) {
+    return registerUserWithNativeEmail(input);
+  }
+
+  const admin = getSupabaseAdminClient();
+  const { data, error } = await admin.auth.admin.generateLink({
+    type: "signup",
+    email: input.email,
+    password: input.password,
+    options: {
+      redirectTo: env.supabaseEmailConfirmRedirectTo,
+      data: {
+        nombre_completo: input.nombreCompleto,
+      },
+    },
+  });
+
+  if (error) {
+    const mapped = mapAuthError(error.message);
+    if (mapped) throw mapped;
+    throw new AppError(
+      400,
+      "AUTH_REGISTER_ERROR",
+      error.message || "No se pudo registrar el usuario",
+    );
+  }
+
+  const createdUser = data.user;
+  if (!createdUser) {
+    throw new AppError(
+      500,
+      "AUTH_INVALID_RESPONSE",
+      "Respuesta invalida al registrar usuario",
+    );
+  }
+
+  try {
+    await assignInitialUserRole(
+      createdUser.id,
+      (createdUser.user_metadata as Record<string, unknown> | null | undefined) ||
+        null,
+      input.nombreCompleto,
+    );
+
+    const confirmationUrl = String(data?.properties?.action_link || "").trim();
+    if (!confirmationUrl) {
+      throw new AppError(
+        500,
+        "EMAIL_CONFIRMATION_LINK_INVALIDO",
+        "No se pudo generar el enlace de confirmacion",
+      );
+    }
+
+    await sendSignupConfirmationEmail({
+      email: input.email,
+      confirmUrl: confirmationUrl,
+      fullName: input.nombreCompleto,
+    });
+  } catch (error) {
+    await deleteUserBestEffort(createdUser.id);
+    throw error;
+  }
+
+  const user = await loadRegisteredUser(createdUser.id);
+
+  return {
+    token: null,
+    user,
+    requiresEmailVerification: true,
   };
 }
 
