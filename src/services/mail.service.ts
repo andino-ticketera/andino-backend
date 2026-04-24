@@ -273,6 +273,91 @@ function buildInternalNotificationHtml(lines: string[]): string {
   `;
 }
 
+export async function sendPasswordRecoveryEmail(input: {
+  email: string;
+  resetUrl: string;
+}): Promise<void> {
+  const resend = getResendClient();
+  const resetUrl = String(input.resetUrl || "").trim();
+
+  if (!resetUrl) {
+    throw new AppError(
+      500,
+      "PASSWORD_RESET_LINK_INVALIDO",
+      "No se pudo generar el enlace de recuperacion",
+    );
+  }
+
+  const safeResetUrl = escapeHtml(resetUrl);
+  const html = buildEmailLayout({
+    pretitle: "Recuperacion de acceso",
+    title: "Restablece tu clave",
+    intro:
+      "Recibimos una solicitud para cambiar la clave de tu cuenta en Andino Tickets.",
+    bodyHtml: `
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+        <tr>
+          <td style="padding:24px;border-radius:20px;background:#2a1342;border:1px solid #3a2a5a;">
+            <div style="font-size:36px;line-height:1;font-weight:900;font-style:italic;color:#5cff9d;text-shadow:3px 3px 0 #ff4fdc,1px 1px 0 rgba(0,0,0,0.28);letter-spacing:-0.02em;">
+              Andino
+            </div>
+            <div style="margin-top:6px;font-size:12px;line-height:1.4;font-weight:700;letter-spacing:0.04em;color:#ffffff;text-transform:uppercase;">
+              Eventos culturales
+            </div>
+            <div style="margin-top:18px;font-size:15px;line-height:1.75;color:#e2dcf0;">
+              Si fuiste vos, hace clic en el boton para crear una nueva clave y volver a entrar a tu cuenta.
+            </div>
+            <a href="${safeResetUrl}" style="display:inline-block;margin-top:22px;padding:14px 22px;border-radius:999px;background:#5cff9d;color:#04110d;text-decoration:none;font-weight:800;font-size:14px;">
+              Restablecer clave
+            </a>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:18px 4px 0;font-size:13px;line-height:1.7;color:#b0a3c7;">
+            Si no ves el boton, copia y pega este enlace en tu navegador:<br />
+            <a href="${safeResetUrl}" style="color:#5cff9d;word-break:break-all;">${safeResetUrl}</a>
+          </td>
+        </tr>
+      </table>
+    `,
+    footerHtml:
+      "Si no pediste este cambio, puedes ignorar este email con tranquilidad.<br />Andino Tickets",
+  });
+
+  const text = [
+    "Restablece tu clave - Andino Tickets",
+    "",
+    "Recibimos una solicitud para cambiar la clave de tu cuenta.",
+    "Si fuiste vos, abre este enlace para continuar:",
+    resetUrl,
+    "",
+    "Si no pediste este cambio, puedes ignorar este email.",
+    "",
+    "Andino Tickets",
+  ].join("\n");
+
+  const { error } = await resend.emails.send({
+    from: getFromAddress(),
+    to: [input.email],
+    subject: "Restablece tu clave en Andino Tickets",
+    html,
+    text,
+  });
+
+  if (error) {
+    logger.error("Fallo envio de email de recuperacion de clave", {
+      from: getFromAddress(),
+      to: [input.email],
+      resendError: serializeProviderError(error),
+    });
+    throw new AppError(
+      502,
+      "EMAIL_SEND_ERROR",
+      "No se pudo enviar el email de recuperacion. Revisar configuracion de Resend.",
+    );
+  }
+}
+
 export async function sendContactMessageEmail(
   input: ContactMessageInput,
 ): Promise<void> {

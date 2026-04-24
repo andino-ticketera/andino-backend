@@ -13,6 +13,7 @@ import {
   getSupabaseAnonClient,
 } from "./supabase.client.js";
 import type { User } from "@supabase/supabase-js";
+import { sendPasswordRecoveryEmail as sendBrandedPasswordRecoveryEmail } from "./mail.service.js";
 
 function resolveRole(user: User): RolUsuario {
   const fromAppRole = normalizeRole(user.app_metadata?.app_role);
@@ -110,6 +111,59 @@ function mapAuthError(errMessage: string): AppError | null {
   }
 
   return null;
+}
+
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message || "";
+  }
+
+  if (error && typeof error === "object" && "message" in error) {
+    const candidate = error as { message?: unknown };
+    return typeof candidate.message === "string" ? candidate.message : "";
+  }
+
+  return typeof error === "string" ? error : "";
+}
+
+function isUserNotFoundError(error: unknown): boolean {
+  const message = getErrorMessage(error).toLowerCase();
+  return (
+    message.includes("user not found") ||
+    message.includes("email not found") ||
+    message.includes("no user found")
+  );
+}
+
+function canFallbackToNativePasswordReset(error: unknown): boolean {
+  if (!(error instanceof AppError)) return false;
+
+  return (
+    error.error === "EMAIL_NO_CONFIGURADO" ||
+    error.error === "EMAIL_SEND_ERROR" ||
+    error.error === "PASSWORD_RESET_LINK_INVALIDO"
+  );
+}
+
+async function sendNativePasswordResetEmail(email: string): Promise<void> {
+  const supabase = getSupabaseAnonClient();
+
+  const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: env.supabasePasswordResetRedirectTo,
+  });
+
+  if (error) {
+    const mapped = mapAuthError(error.message);
+    if (mapped) {
+      throw mapped;
+    }
+
+    throw new AppError(
+      400,
+      "PASSWORD_RESET_ERROR",
+      "No se pudo enviar el email de recuperacion",
+    );
+  }
 }
 
 export async function registerUser(input: {
@@ -448,14 +502,55 @@ export async function updateUserRole(
 }
 
 export async function sendPasswordResetEmail(email: string): Promise<void> {
-  const supabase = getSupabaseAnonClient();
+  const admin = getSupabaseAdminClient();
 
-  const { error } = await supabase.auth.resetPasswordForEmail(email, {
-    redirectTo: env.supabasePasswordResetRedirectTo,
-  });
+  try {
+    const { data, error } = await admin.auth.admin.generateLink({
+      type: "recovery",
+      email,
+      options: {
+        redirectTo: env.supabasePasswordResetRedirectTo,
+      },
+    });
 
-  if (error) {
-    const mapped = mapAuthError(error.message);
+    if (error) {
+      if (isUserNotFoundError(error)) {
+        return;
+      }
+
+      await sendNativePasswordResetEmail(email);
+      return;
+    }
+
+    const resetUrl = String(data?.properties?.action_link || "").trim();
+    if (!resetUrl) {
+      await sendNativePasswordResetEmail(email);
+      return;
+    }
+
+    try {
+      await sendBrandedPasswordRecoveryEmail({
+        email,
+        resetUrl,
+      });
+    } catch (error) {
+      if (canFallbackToNativePasswordReset(error)) {
+        await sendNativePasswordResetEmail(email);
+        return;
+      }
+
+      throw error;
+    }
+  } catch (error) {
+    if (isUserNotFoundError(error)) {
+      return;
+    }
+
+    if (error instanceof AppError) {
+      throw error;
+    }
+
+    const mapped = mapAuthError(getErrorMessage(error));
     if (mapped) {
       throw mapped;
     }

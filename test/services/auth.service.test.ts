@@ -1,17 +1,28 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { env } from "../../src/config/env.js";
 import { AppError } from "../../src/utils/errors.js";
 
 const mocks = vi.hoisted(() => {
   const listUsersMock = vi.fn();
   const getUserByIdMock = vi.fn();
   const updateUserByIdMock = vi.fn();
+  const generateLinkMock = vi.fn();
+  const resetPasswordForEmailMock = vi.fn();
+  const sendPasswordRecoveryEmailMock = vi.fn();
 
   return {
     listUsersMock,
     getUserByIdMock,
     updateUserByIdMock,
+    generateLinkMock,
+    resetPasswordForEmailMock,
+    sendPasswordRecoveryEmailMock,
   };
 });
+
+vi.mock("../../src/services/mail.service.js", () => ({
+  sendPasswordRecoveryEmail: mocks.sendPasswordRecoveryEmailMock,
+}));
 
 vi.mock("../../src/services/supabase.client.js", () => ({
   getSupabaseAdminClient: () => ({
@@ -20,6 +31,7 @@ vi.mock("../../src/services/supabase.client.js", () => ({
         listUsers: mocks.listUsersMock,
         getUserById: mocks.getUserByIdMock,
         updateUserById: mocks.updateUserByIdMock,
+        generateLink: mocks.generateLinkMock,
       },
     },
   }),
@@ -28,13 +40,14 @@ vi.mock("../../src/services/supabase.client.js", () => ({
       signUp: vi.fn(),
       signInWithPassword: vi.fn(),
       getUser: vi.fn(),
-      resetPasswordForEmail: vi.fn(),
+      resetPasswordForEmail: mocks.resetPasswordForEmailMock,
     },
   }),
 }));
 
 import {
   listRegisteredUsers,
+  sendPasswordResetEmail,
   updateUserRole,
 } from "../../src/services/auth.service.js";
 
@@ -163,5 +176,78 @@ describe("auth.service", () => {
       email: "organizador@example.com",
       rol: "ORGANIZADOR",
     });
+  });
+
+  it("envia el mail de recuperacion branded usando un link generado por Supabase Admin", async () => {
+    mocks.generateLinkMock.mockResolvedValueOnce({
+      data: {
+        properties: {
+          action_link: "https://example.com/reset?token=abc123",
+        },
+      },
+      error: null,
+    });
+    mocks.sendPasswordRecoveryEmailMock.mockResolvedValueOnce(undefined);
+
+    await sendPasswordResetEmail("user@example.com");
+
+    expect(mocks.generateLinkMock).toHaveBeenCalledWith({
+      type: "recovery",
+      email: "user@example.com",
+      options: {
+        redirectTo: env.supabasePasswordResetRedirectTo,
+      },
+    });
+    expect(mocks.sendPasswordRecoveryEmailMock).toHaveBeenCalledWith({
+      email: "user@example.com",
+      resetUrl: "https://example.com/reset?token=abc123",
+    });
+    expect(mocks.resetPasswordForEmailMock).not.toHaveBeenCalled();
+  });
+
+  it("vuelve al mail nativo de Supabase si el mail branded no esta configurado", async () => {
+    mocks.generateLinkMock.mockResolvedValueOnce({
+      data: {
+        properties: {
+          action_link: "https://example.com/reset?token=abc123",
+        },
+      },
+      error: null,
+    });
+    mocks.sendPasswordRecoveryEmailMock.mockRejectedValueOnce(
+      new AppError(
+        503,
+        "EMAIL_NO_CONFIGURADO",
+        "El servicio de email no esta configurado",
+      ),
+    );
+    mocks.resetPasswordForEmailMock.mockResolvedValueOnce({ error: null });
+
+    await sendPasswordResetEmail("user@example.com");
+
+    expect(mocks.resetPasswordForEmailMock).toHaveBeenCalledWith(
+      "user@example.com",
+      {
+        redirectTo: env.supabasePasswordResetRedirectTo,
+      },
+    );
+  });
+
+  it("no revela si el email no existe", async () => {
+    mocks.generateLinkMock.mockResolvedValueOnce({
+      data: {
+        properties: null,
+      },
+      error: {
+        message: "User not found",
+      },
+    });
+
+    await expect(sendPasswordResetEmail("ghost@example.com")).resolves.toBe(
+      undefined,
+    );
+
+    expect(mocks.sendPasswordRecoveryEmailMock).not.toHaveBeenCalled();
+    expect(mocks.resetPasswordForEmailMock).not.toHaveBeenCalled();
   });
 });
